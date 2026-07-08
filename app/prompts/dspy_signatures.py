@@ -99,3 +99,26 @@ class TriageSignature(dspy.Signature):
     location: str = dspy.InputField(desc="Where this conversation is taking place (Server/Channel or DM).")
     is_direct_interaction: str = dspy.InputField(desc="True if the human explicitly pinged @PSI-09.")
     decision: TriageDecision = dspy.OutputField(desc="Strict boolean routing decision.")
+
+class GraphRelationship(BaseModel):
+    source: str = Field(description="The source entity (e.g., 'User1')")
+    relation: str = Field(description="The relationship (e.g., 'dislikes', 'created', 'is associated with')")
+    target: str = Field(description="The target entity (e.g., 'ProjectX')")
+
+class GraphExtractionDecision(BaseModel):
+    entities: list[str] = Field(default_factory=list, description="A list of key entities (people, concepts, projects) found in the text.")
+    relationships: list[GraphRelationship] = Field(default_factory=list, description="A list of relationships between the extracted entities.")
+
+class GraphExtractionSignature(dspy.Signature):
+    """
+    You are a Knowledge Graph Extraction Engine.
+    Your objective is to read a user's recent chat history and extract any NEW entities and relationships that define their psychological profile, technical stack, or social dynamic.
+    Merge your findings logically with the existing graph context to avoid redundant relationships, but ALWAYS extract new insights.
+    Focus on extracting roasting material: insecurities, bad tech choices, failed projects, and embarrassing associations.
+    """
+
+    chat_history: str = dspy.InputField(desc="The user's recent chat history to analyze.")
+    existing_entities: str = dspy.InputField(desc="Currently known entities in the graph.")
+    existing_relationships: str = dspy.InputField(desc="Currently known relationships in the graph.")
+    
+    extracted_graph: GraphExtractionDecision = dspy.OutputField(desc="The newly extracted entities and relationships formatted strictly as JSON.")
