@@ -22,7 +22,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
 
     existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
     
-    extractor = dspy.TypedPredictor(GraphExtractionSignature)
+    extractor = dspy.Predictor(GraphExtractionSignature)
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
     
