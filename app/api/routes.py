@@ -2,6 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.api.models import IncomingPayload, EngineResponse
 from app.engine.dispatcher import dispatcher
 from app.tasks.background import evolve_profile_task
+from app.db.repositories import ChatRepository, GroupHistoryRepository
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -15,11 +17,23 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
     Unified entrypoint for all platform bridges.
     """
     try:
+        user_key = f"{payload.group_name}:{payload.username}"
+        
+        # Save the message to the DB BEFORE dispatching
+        message_data = {
+            "username": payload.username,
+            "content": payload.message,
+            "timestamp": datetime.now(timezone.utc)
+        }
+        
+        ChatRepository().store_message(user_key, message_data)
+        if payload.group_name != "private_chat":
+            GroupHistoryRepository().store_message(payload.group_name, message_data)
+
         # The dispatcher handles selecting the correct engine based on payload.mode
         response = await dispatcher.dispatch(payload)
         
         # Schedule the background evolution safely without blocking the response
-        user_key = f"{payload.group_name}:{payload.username}"
         background_tasks.add_task(evolve_profile_task, user_key, payload.mode)
         
         return response
