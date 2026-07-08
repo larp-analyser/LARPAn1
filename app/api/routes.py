@@ -4,6 +4,7 @@ from app.engine.dispatcher import dispatcher
 from app.tasks.background import evolve_profile_task
 from app.db.repositories import ChatRepository, GroupHistoryRepository, GlobalHistoryRepository
 from datetime import datetime, timezone
+import asyncio
 
 router = APIRouter()
 
@@ -44,11 +45,11 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
             "timestamp": timestamp
         }
         
-        _chat_repo.store_message(user_key, local_entry)
-        _global_repo.store_message(global_key, global_entry)
+        await asyncio.to_thread(_chat_repo.store_message, user_key, local_entry)
+        await asyncio.to_thread(_global_repo.store_message, global_key, global_entry)
         
         if not is_private:
-            _group_repo.store_message(payload.group_name, local_entry)
+            await asyncio.to_thread(_group_repo.store_message, payload.group_name, local_entry)
 
         # --- 2. Dispatch to Engine ---
         response = await dispatcher.dispatch(payload)
@@ -64,11 +65,11 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
                 "timestamp": reply_timestamp
             }
             
-            _chat_repo.store_message(user_key, reply_entry)
-            _global_repo.store_message(global_key, reply_entry)
+            await asyncio.to_thread(_chat_repo.store_message, user_key, reply_entry)
+            await asyncio.to_thread(_global_repo.store_message, global_key, reply_entry)
             
             if not is_private:
-                _group_repo.store_message(payload.group_name, reply_entry)
+                await asyncio.to_thread(_group_repo.store_message, payload.group_name, reply_entry)
         
         # --- 4. Schedule Background Evolution ---
         background_tasks.add_task(evolve_profile_task, user_key, payload.group_name, global_key, payload.mode)

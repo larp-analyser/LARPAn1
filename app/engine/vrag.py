@@ -154,19 +154,19 @@ class VRAGEngine(BaseEngine):
     def engine_name(self) -> str:
         return "vrag"
         
-    def _format_history(self, payload: IncomingPayload) -> str:
+    async def _format_history(self, payload: IncomingPayload) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
         if payload.group_name == "private_chat":
-            history = self.chat_repo.get_recent_history(user_key, limit=16)
+            history = await asyncio.to_thread(self.chat_repo.get_recent_history, user_key, limit=16)
         else:
-            history = self.group_repo.get_recent_history(payload.group_name, limit=16)
+            history = await asyncio.to_thread(self.group_repo.get_recent_history, payload.group_name, limit=16)
             
         return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
         
-    def _format_graph(self, payload: IncomingPayload) -> str:
+    async def _format_graph(self, payload: IncomingPayload) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
-        user_graph = self.graph_repo.get_user_graph(user_key)
-        group_graph = self.graph_repo.get_group_graph(payload.group_name)
+        user_graph = await asyncio.to_thread(self.graph_repo.get_user_graph, user_key)
+        group_graph = await asyncio.to_thread(self.graph_repo.get_group_graph, payload.group_name)
         
         return build_networkx_context(payload.username, user_graph, group_graph)
         
@@ -174,8 +174,8 @@ class VRAGEngine(BaseEngine):
         is_private = (payload.group_name == "private_chat")
         
         initial_state = {
-            "history": self._format_history(payload),
-            "graph": self._format_graph(payload),
+            "history": await self._format_history(payload),
+            "graph": await self._format_graph(payload),
             "user": payload.username,
             "message": payload.message,
             "location": payload.channel if not is_private else "Direct Message",

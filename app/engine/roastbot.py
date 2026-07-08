@@ -7,10 +7,11 @@ from app.core.llm_balancer import nvidia_combat_pool
 from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GlobalMemoryRepository
 from app.prompts.roastbot_prompts import ROAST_PROMPT, GROUP_ROAST_PROMPT
 from app.core.config import settings
+from app.core.utils import sanitize_think_tags, trim_history_by_tokens
 
 logger = logging.getLogger(__name__)
 
-def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRepository, max_targets: int = 3) -> list:
+async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRepository, max_targets: int = 3) -> list:
     """Fetch global memory profiles for users tagged in the message."""
     profiles = []
     for u in tagged_users[:max_targets]:
@@ -19,35 +20,12 @@ def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryReposito
         if not username:
             continue
         memory_key = f"Global:{username}"
-        summary = global_repo.get_profile(memory_key)
+        summary = await asyncio.to_thread(global_repo.get_profile, memory_key)
         if summary:
             profiles.append(f'<bystander username="{username}" numeric_id="{uid}">\n{summary.strip()}\n</bystander>')
     return profiles
 
-def _sanitize_think_tags(text: str) -> str:
-    """Comprehensive think-tag sanitization matching the old 5-regex chain."""
-    if not text:
-        return ""
-    clean = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
-    clean = re.sub(r"<think>.*", "", clean, flags=re.DOTALL | re.IGNORECASE)
-    clean = re.sub(r"<\|?think\|?>.*?</\|?think\|?>\s*", "", clean, flags=re.DOTALL | re.IGNORECASE)
-    clean = re.sub(r"<\|?think\|?>.*", "", clean, flags=re.DOTALL | re.IGNORECASE)
-    clean = re.sub(r"<\|channel>thought.*?</channel\|>\s*", "", clean, flags=re.DOTALL | re.IGNORECASE)
-    return clean.strip()
 
-def _trim_history_by_tokens(history_docs: list, max_tokens: int) -> list:
-    """Trim history to fit within a token budget using word-count estimation."""
-    total = 0
-    trimmed = []
-    for m in reversed(history_docs):
-        sender = m.get("username") or m.get("sender") or m.get("role") or "User"
-        formatted = f"[{sender}]: {m.get('content', '')}"
-        estimated_tokens = int(len(formatted.split()) * 1.5)
-        if total + estimated_tokens > max_tokens:
-            break
-        trimmed.insert(0, m)
-        total += estimated_tokens
-    return trimmed
 
 
 class RoastbotEngine(BaseEngine):
@@ -81,11 +59,11 @@ class RoastbotEngine(BaseEngine):
             )
             
         # 2. Context Assembly
-        user_history_docs = self.chat_repo.get_recent_history(user_key, limit=settings.MAX_HISTORY_MESSAGES)
-        user_history_docs = _trim_history_by_tokens(user_history_docs, settings.MAX_HISTORY_TOKENS)
+        user_history_docs = await asyncio.to_thread(self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES)
+        user_history_docs = trim_history_by_tokens(user_history_docs, settings.MAX_HISTORY_TOKENS)
         
-        local_group_profile = self.memory_repo.get_profile(user_key)
-        global_omniscient_profile = self.global_repo.get_profile(f"Global:{payload.username}")
+        local_group_profile = await asyncio.to_thread(self.memory_repo.get_profile, user_key)
+        global_omniscient_profile = await asyncio.to_thread(self.global_repo.get_profile, f"Global:{payload.username}")
         
         prompt_text = ""
         if is_private:
@@ -94,10 +72,10 @@ class RoastbotEngine(BaseEngine):
             prompt_text += f"\n\n<local_group_profile>\n{local_group_profile}\n</local_group_profile>"
             prompt_text += f"\n\n<global_omniscient_profile>\n{global_omniscient_profile}\n</global_omniscient_profile>"
         else:
-            group_history_docs = self.group_repo.get_recent_history(payload.group_name, limit=settings.GROUP_HISTORY_SLICE)
-            group_history_docs = _trim_history_by_tokens(group_history_docs, settings.GROUP_HISTORY_TOKEN_LIMIT)
+            group_history_docs = await asyncio.to_thread(self.group_repo.get_recent_history, payload.group_name, limit=settings.GROUP_HISTORY_SLICE)
+            group_history_docs = trim_history_by_tokens(group_history_docs, settings.GROUP_HISTORY_TOKEN_LIMIT)
             
-            group_summary = self.memory_repo.get_profile(payload.group_name)
+            group_summary = await asyncio.to_thread(self.memory_repo.get_profile, payload.group_name)
             prompt_text = GROUP_ROAST_PROMPT
             prompt_text += f"\n\n<chat_history>\n{self._format_history(group_history_docs)}\n</chat_history>"
             prompt_text += f"\n\n<group_dynamic_summary>\n{group_summary}\n</group_dynamic_summary>"
@@ -105,7 +83,7 @@ class RoastbotEngine(BaseEngine):
             prompt_text += f"\n\n<global_omniscient_profile>\n{global_omniscient_profile}\n</global_omniscient_profile>"
             
             # Tagged User Profiles (Gap 1 fix)
-            tagged_profiles = _fetch_tagged_profiles(payload.tagged_users, self.global_repo)
+            tagged_profiles = await _fetch_tagged_profiles(payload.tagged_users, self.global_repo)
             if tagged_profiles:
                 joined_profiles = "\n\n".join(tagged_profiles)
                 prompt_text += f"\n\n<tagged_member_profiles>\n{joined_profiles}\n</tagged_member_profiles>"
@@ -129,7 +107,7 @@ class RoastbotEngine(BaseEngine):
                     final_reply = str(res)
                     
                 # Comprehensive think-tag sanitization (Gap 5 fix)
-                final_reply = _sanitize_think_tags(final_reply)
+                final_reply = sanitize_think_tags(final_reply)
                     
                 break
             except Exception as e:
