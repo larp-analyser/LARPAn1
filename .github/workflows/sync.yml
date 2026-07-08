@@ -22,7 +22,9 @@ jobs:
           echo "emoji: 🎭" >> hf_frontmatter.txt
           echo "colorFrom: gray" >> hf_frontmatter.txt
           echo "colorTo: gray" >> hf_frontmatter.txt
-          echo "sdk: docker" >> hf_frontmatter.txt
+          echo "sdk: gradio" >> hf_frontmatter.txt
+          echo "sdk_version: 5.9.1" >> hf_frontmatter.txt
+          echo "app_file: app.py" >> hf_frontmatter.txt
           echo "pinned: false" >> hf_frontmatter.txt
           echo "app_port: 7860" >> hf_frontmatter.txt
           echo "---" >> hf_frontmatter.txt

@@ -12,3 +12,4 @@ dspy-ai
 langgraph
 requests
 python-dotenv
+gradio
