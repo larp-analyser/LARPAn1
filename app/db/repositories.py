@@ -7,7 +7,7 @@ from app.core.config import settings
 UTC = timezone.utc
 
 class TTLCache:
-    def __init__(self, ttl_seconds: int, max_size: int = 10000):
+    def __init__(self, ttl_seconds: int, max_size: int = 500):
         self.ttl = ttl_seconds
         self.max_size = max_size
         self.cache = {}

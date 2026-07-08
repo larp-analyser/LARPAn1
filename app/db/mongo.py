@@ -12,8 +12,8 @@ class MongoDB:
             cls.client = MongoClient(
                 settings.MONGO_URI,
                 tlsCAFile=certifi.where(),
-                maxPoolSize=20,
-                minPoolSize=2,
+                maxPoolSize=5,
+                minPoolSize=1,
                 maxIdleTimeMS=120000,
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=10000,
