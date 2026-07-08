@@ -7,10 +7,22 @@ from app.core.config import settings
 UTC = timezone.utc
 
 class TTLCache:
-    def __init__(self, ttl_seconds: int):
+    def __init__(self, ttl_seconds: int, max_size: int = 10000):
         self.ttl = ttl_seconds
+        self.max_size = max_size
         self.cache = {}
         self.lock = threading.Lock()
+
+    def _cleanup(self):
+        now = time.time()
+        keys_to_delete = [k for k, v in self.cache.items() if now - v['time'] >= self.ttl]
+        for k in keys_to_delete:
+            del self.cache[k]
+            
+        if len(self.cache) > self.max_size:
+            sorted_items = sorted(self.cache.items(), key=lambda item: item[1]['time'])
+            for k, _ in sorted_items[:self.max_size // 2]:
+                del self.cache[k]
 
     def get(self, key: str):
         with self.lock:
@@ -24,6 +36,8 @@ class TTLCache:
 
     def set(self, key: str, value):
         with self.lock:
+            if len(self.cache) >= self.max_size:
+                self._cleanup()
             self.cache[key] = {'value': value, 'time': time.time()}
             
     def delete(self, key: str):
@@ -43,7 +57,12 @@ class ChatRepository:
     def store_message(self, user_key: str, message_data: dict):
         self.collection.update_one(
             {"_id": user_key},
-            {"$push": {"messages": message_data}},
+            {"$push": {
+                "messages": {
+                    "$each": [message_data],
+                    "$slice": -settings.MAX_HISTORY_MESSAGES
+                }
+            }},
             upsert=True
         )
         
@@ -58,7 +77,12 @@ class GroupHistoryRepository:
     def store_message(self, group_name: str, message_data: dict):
         self.collection.update_one(
             {"_id": group_name},
-            {"$push": {"messages": message_data}},
+            {"$push": {
+                "messages": {
+                    "$each": [message_data],
+                    "$slice": -settings.GROUP_HISTORY_MAX_MESSAGES
+                }
+            }},
             upsert=True
         )
         
@@ -96,7 +120,12 @@ class GlobalHistoryRepository:
     def store_message(self, global_key: str, message_data: dict):
         self.collection.update_one(
             {"_id": global_key},
-            {"$push": {"messages": message_data}},
+            {"$push": {
+                "messages": {
+                    "$each": [message_data],
+                    "$slice": -1000
+                }
+            }},
             upsert=True
         )
         
