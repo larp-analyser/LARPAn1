@@ -13,3 +13,4 @@ langgraph
 requests
 python-dotenv
 gradio
+spaces

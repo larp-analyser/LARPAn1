@@ -26,6 +26,9 @@ fastapi_app.add_middleware(
 
 fastapi_app.include_router(router)
 
+import spaces
+
+@spaces.GPU
 def engine_status():
     return "LARPAn1 Engine is active. API is running perfectly."
 
