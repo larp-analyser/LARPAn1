@@ -34,13 +34,11 @@ jobs:
           
       - name: Push to hub
         env:
-          # You must create a GitHub Secret named HF_TOKEN containing your Hugging Face write token
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_REPO_URL: "https://sudoboneman:${HF_TOKEN}@huggingface.co/spaces/sudoboneman/LARPAn1"
         run: |
           git config --global user.email "bot@github.actions"
           git config --global user.name "GitHub Actions Bot"
           # Commit the modified README to the local runner state
           git commit -am "chore: inject HF frontmatter for deployment [skip ci]" || echo "No changes to commit"
-          # Force push to the Hugging Face remote (this does NOT affect your GitHub repo)
-          git push $HF_REPO_URL main --force
+          # Force push to the Hugging Face remote
+          git push https://sudoboneman:${HF_TOKEN}@huggingface.co/spaces/sudoboneman/LARPAn1 main --force
