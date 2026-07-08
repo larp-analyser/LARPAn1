@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: larpan1-engine
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run.py"
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Notice: MONGO_URI, GROQ_API_KEYS, and NVIDIA_API_KEYS 
+      # MUST be added manually in the Render dashboard for security!
