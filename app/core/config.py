@@ -27,14 +27,15 @@ class Settings(BaseSettings):
     GROUP_SUMMARY_EVERY_N: int = 300
 
     # Model Pools
-    ROAST_MODELS: List[str] = ["meta/llama-3.1-70b-instruct"]
+    ROAST_MODELS: List[str] = ["mistralai/mistral-large-3-675b-instruct-2512"]
     BACKGROUND_MODELS: List[str] = [
+        "openai/gpt-oss-120b",
         "llama-3.3-70b-versatile",
-        "mixtral-8x7b-32768"
+        "meta-llama/llama-4-scout-17b-16e-instruct"
     ]
     TRIAGE_MODELS: List[str] = [
-        "llama-3.3-70b-versatile",
-        "llama3-8b-8192"
+        "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile"
     ]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
