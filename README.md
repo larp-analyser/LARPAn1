@@ -14,7 +14,7 @@ LARPAn1 discards the monolithic, tightly coupled anti-patterns of its predecesso
 
 The engine multiplexes across two distinct operational paradigms, routed seamlessly via a polymorphic dispatcher.
 
-### Core Processing Flow
+### Internal Processing Flow
 
 1. **Ingestion & Validation**: Bridges send payloads to `POST /psi09`. The payload is strictly validated against Pydantic schemas.
 2. **Dispatching**: The `EngineDispatcher` reads the `mode` parameter and routes the payload to either the `RoastbotEngine` or `VRAGEngine`.
@@ -41,7 +41,7 @@ class IncomingPayload(BaseModel):
     force_reply: bool
     mode: Literal["auto", "legacy", "vrag"]
 ```
-If a bridge submits a malformed payload, FastAPI automatically intercepts the request and issues a `422 Unprocessable Entity` response, entirely isolating the core engine from data-formatting faults.
+If a bridge submits a malformed payload, FastAPI automatically intercepts the request and issues a `422 Unprocessable Entity` response, entirely isolating the backend from data-formatting faults.
 
 ### 2. Dual Engine Paradigms
 
@@ -131,4 +131,4 @@ The legacy `RoastbotEngine` continues to honor the original prompt matrices that
 ---
 
 > *"They type to fill the void. We type to widen it."*  
-> **— LARPAn1 Core Protocol**
+> **— LARPAn1 Protocol**
