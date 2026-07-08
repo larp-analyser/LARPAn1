@@ -49,6 +49,36 @@ class MemoryRepository:
             upsert=True
         )
 
+class GlobalHistoryRepository:
+    def __init__(self):
+        self.collection = MongoDB.get_collection("global_history")
+
+    def store_message(self, global_key: str, message_data: dict):
+        self.collection.update_one(
+            {"_id": global_key},
+            {"$push": {"messages": message_data}},
+            upsert=True
+        )
+        
+    def get_recent_history(self, global_key: str, limit: int = 80) -> list:
+        doc = self.collection.find_one({"_id": global_key}, {"messages": {"$slice": -limit}})
+        return doc.get("messages", []) if doc else []
+
+class GlobalMemoryRepository:
+    def __init__(self):
+        self.collection = MongoDB.get_collection("global_memory")
+
+    def get_profile(self, global_key: str) -> str:
+        doc = self.collection.find_one({"_id": global_key})
+        return doc.get("summary", "") if doc else ""
+        
+    def update_profile(self, global_key: str, summary: str):
+        self.collection.update_one(
+            {"_id": global_key},
+            {"$set": {"summary": summary, "last_updated": datetime.now(UTC)}},
+            upsert=True
+        )
+
 class GraphRepository:
     """Handles vRAG's entity and relationship graphs"""
     def __init__(self):

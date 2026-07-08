@@ -2,8 +2,8 @@ import logging
 import asyncio
 import dspy
 from app.core.llm_balancer import background_pool
-from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GraphRepository
-from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT
+from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository
+from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
 from app.prompts.dspy_signatures import GraphExtractionSignature
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
 
     existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
     
-    extractor = dspy.Predictor(GraphExtractionSignature)
+    extractor = dspy.Predict(GraphExtractionSignature)
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
     
@@ -93,7 +93,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
 
-async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo: MemoryRepository):
+async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False):
     if len(history_docs) < 5:
         return
         
@@ -102,9 +102,15 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo:
     
     prompt = ""
     if not old_summary:
-        prompt = FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+        if is_global:
+            prompt = GLOBAL_FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+        else:
+            prompt = FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
     else:
-        prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+        if is_global:
+            prompt = GLOBAL_EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+        else:
+            prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
         
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_profile = ""
@@ -134,15 +140,17 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo:
         logger.warning(f"[BACKGROUND] Failed to generate profile for {entity_key}.")
 
 
-async def evolve_profile_task(user_key: str, group_name: str, mode: str):
+async def evolve_profile_task(user_key: str, group_name: str, global_key: str, mode: str):
     """
     Background task to evolve the user's local memory profile and the group's global profile.
     """
     chat_repo = ChatRepository()
     group_repo = GroupHistoryRepository()
+    global_history_repo = GlobalHistoryRepository()
     
     user_history = chat_repo.get_recent_history(user_key, limit=30)
     group_history = group_repo.get_recent_history(group_name, limit=80)
+    global_history = global_history_repo.get_recent_history(global_key, limit=50)
     
     if mode == "vrag":
         graph_repo = GraphRepository()
@@ -157,10 +165,14 @@ async def evolve_profile_task(user_key: str, group_name: str, mode: str):
     else:
         # Legacy Roastbot Text Profiling
         memory_repo = MemoryRepository()
+        global_memory_repo = GlobalMemoryRepository()
         
         # Evolve User Profile
-        await _evolve_text_profile(user_key, user_history, memory_repo)
+        await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
         
         # Evolve Group Profile
         if group_name != "private_chat":
-            await _evolve_text_profile(group_name, group_history, memory_repo)
+            await _evolve_text_profile(group_name, group_history, memory_repo, is_global=False)
+            
+        # Evolve Global Profile
+        await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)

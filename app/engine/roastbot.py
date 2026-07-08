@@ -2,7 +2,7 @@ import logging
 from app.engine.base import BaseEngine
 from app.api.models import IncomingPayload, EngineResponse
 from app.core.llm_balancer import nvidia_combat_pool
-from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository
+from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GlobalMemoryRepository
 from app.prompts.roastbot_prompts import ROAST_PROMPT, GROUP_ROAST_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ class RoastbotEngine(BaseEngine):
         self.chat_repo = ChatRepository()
         self.group_repo = GroupHistoryRepository()
         self.memory_repo = MemoryRepository()
+        self.global_repo = GlobalMemoryRepository()
     
     def engine_name(self) -> str:
         return "roastbot"
@@ -39,12 +40,14 @@ class RoastbotEngine(BaseEngine):
         # 2. Context Assembly
         user_history_docs = self.chat_repo.get_recent_history(user_key, limit=30)
         local_group_profile = self.memory_repo.get_profile(user_key)
+        global_omniscient_profile = self.global_repo.get_profile(f"Global:{payload.username}")
         
         prompt_text = ""
         if is_private:
             prompt_text = ROAST_PROMPT
             prompt_text += f"\n\n<chat_history>\n{self._format_history(user_history_docs)}\n</chat_history>"
             prompt_text += f"\n\n<local_group_profile>\n{local_group_profile}\n</local_group_profile>"
+            prompt_text += f"\n\n<global_omniscient_profile>\n{global_omniscient_profile}\n</global_omniscient_profile>"
         else:
             group_history_docs = self.group_repo.get_recent_history(payload.group_name, limit=80)
             group_summary = self.memory_repo.get_profile(payload.group_name) # Group profiles stored in memory_repo for this legacy
@@ -52,6 +55,7 @@ class RoastbotEngine(BaseEngine):
             prompt_text += f"\n\n<chat_history>\n{self._format_history(group_history_docs)}\n</chat_history>"
             prompt_text += f"\n\n<group_dynamic_summary>\n{group_summary}\n</group_dynamic_summary>"
             prompt_text += f"\n\n<local_group_profile>\n{local_group_profile}\n</local_group_profile>"
+            prompt_text += f"\n\n<global_omniscient_profile>\n{global_omniscient_profile}\n</global_omniscient_profile>"
             
         # Add target
         prompt_text += f"\n\nTARGET USER: {payload.username}\nMESSAGE: {payload.message}"
