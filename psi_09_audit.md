@@ -1,71 +1,61 @@
-# PSI-09 Architectural Audit: v1 vs v2 (LARPAn1 Core Engine)
+# PSI-09 Architectural Audit: v1 Ecosystem vs LARPAn1 (Core Engine v2)
 
-This document serves as a deep-dive architectural audit, comparing the original PSI-09 engine(s) against the newly constructed **PSI-09 Core Engine v2 (an1)**. 
-
----
-
-## 1. Core Architecture & Routing
-
-### Original PSI-09
-The original PSI-09 engines were heavily fragmented. There were often entirely separate scripts or monolithic files handling different bot functions. Routing was typically tied directly to the platform (e.g., the Discord bot code handled the LLM logic, the database logic, and the Discord API all in one massive block). If one component failed or blocked, the entire bot hung.
-
-### Core Engine v2 (Current)
-- **Decoupled API Design:** The new engine is a pure, headless REST API built on **FastAPI**. It has zero dependencies on Discord or WhatsApp. It accepts a standardized `IncomingPayload`. This means you can hook up an infinite number of platforms (Discord, WhatsApp, Minecraft, Web) to the exact same engine simultaneously.
-- **Asynchronous Execution:** By utilizing `asyncio.to_thread()`, the heavy LLM tasks never block the web server. The API can ingest hundreds of messages per second without freezing.
-
-**Verdict:** v2 is vastly superior in scalability and platform-agnosticism.
+This document provides a highly technical, code-level architectural audit comparing the original PSI-09 Ecosystem (`psi-09-roastbot`, `PSI-09-vRAG`, etc.) against the newly consolidated **LARPAn1 Core Engine v2 (`psi-09-engine-v2`)**.
 
 ---
 
-## 2. LLM Processing & Load Balancing
+## 1. System Architecture & Modularity
 
-### Original PSI-09
-Relied on direct API calls (often using standard OpenAI SDKs or raw requests) to single endpoints. If Groq rate-limited the bot (429 Error), the bot would simply crash, throw an error to the user, or drop the message entirely.
+### Original Ecosystem (v1)
+The original PSI-09 was an impressive but fragmented ecosystem. It achieved true decoupling (separating the API from the Discord/WhatsApp bridges), but the API engines themselves were monolithic.
+- **Monolithic Scripts:** Both `psi-09-roastbot/main.py` (856 lines) and `PSI-09-vRAG/main.py` (699 lines) contained the entire stack—database logic, LLM load balancers, Flask routing, and DSPy signatures—crammed into single files.
+- **Fragmented Servers:** The Roastbot (flat prompt) and vRAG (LangGraph) engines were entirely separate projects. You had to run them as separate servers, requiring separate deployments.
+- **Synchronous Framework:** Built on **Flask**. While Flask supports threading, handling asynchronous LLM streaming and graph extraction in the background is fundamentally clunky in Flask and prone to blocking the main web server thread under heavy traffic.
 
-### Core Engine v2 (Current)
-- **DSPy & LiteLLM Integration:** The entire LLM interaction layer has been abstracted behind DSPy signatures, ensuring highly structured, deterministic JSON outputs instead of unpredictable text blobs.
-- **The Failover & Round-Robin Pools:** This is the crown jewel of v2. `app/core/llm_balancer.py` introduces enterprise-grade load balancing.
-  - The `FailoverLMPool` instantly swaps API keys and models if Groq rate-limits the engine.
-  - The `NvidiaRoundRobinPool` distributes heavy combat requests evenly across multiple API keys to maximize parallel throughput.
+### LARPAn1 Core Engine (v2)
+- **Modular Consolidation:** The v2 engine merges both the Roastbot and vRAG engines into a single, unified codebase. It uses a **Dispatcher Layer** (`app/engine/dispatcher.py`) to route incoming payloads to the requested architecture dynamically based on the `mode` JSON field.
+- **MVC-style Modularity:** The monolithic `main.py` was shattered into clean, enterprise-grade directories: `app/api`, `app/core`, `app/db`, `app/engine`, `app/prompts`, and `app/tasks`. 
+- **Asynchronous Framework:** Built on **FastAPI**. FastAPI natively handles `async/await` and seamlessly offloads heavy DSPy LangGraph operations to background threads (`asyncio.to_thread`), allowing the API to ingest massive cross-platform traffic without hanging.
 
-**Verdict:** v1 was fragile under heavy load. v2 is practically indestructible on free-tier APIs.
-
----
-
-## 3. Profiling & Memory Systems
-
-### Original PSI-09
-Achieved global, group, and DM tracking by saving massive text blobs. The "First Contact" and "Evolution" logic existed, but it often ran synchronously, meaning the bot would pause for 10 seconds to think about your psychological profile before it actually replied to you.
-
-### Core Engine v2 (Current)
-- **Stealth Profiling:** The `evolve_profile_task` runs in the background. The engine fires its response to the user instantly, and then quietly mutates the psychological profile asynchronously.
-- **GraphRAG (vRAG) Pipeline:** While the original vRAG experimented with social algorithms, v2 formally integrates it into the pipeline using `dspy.Signature`. It automatically merges entities and relationships in MongoDB (`GraphRepository`) to build a persistent, mathematically accessible Knowledge Graph of social dynamics.
-
-**Verdict:** v2 achieves the exact same psychological depth, but does it completely invisibly without sacrificing response speed.
+**Verdict:** v1 was a brilliant proof-of-concept for decoupled AI bridges. LARPAn1 (v2) takes that concept and upgrades it to an enterprise-grade, highly maintainable, massively concurrent microservice.
 
 ---
 
-## 4. Triage & Engagement Logic
+## 2. LLM Load Balancing & Failover
 
-### Original PSI-09
-Tended to rely on simple keyword regex (e.g., `if "psi-09" in message`) or random chance to decide whether to reply. This often led to the bot either spamming the chat or ignoring people when they were subtly baiting it.
+### Original Ecosystem (v1)
+The v1 `PSI-09-vRAG` actually invented the `FailoverLMPool` and `NvidiaRoundRobinPool`. It successfully implemented threading locks to manage API rate limits across Groq and NVIDIA NIM. However, because it was trapped in a single file, configuring models required hardcoding array changes deep in the script.
 
-### Core Engine v2 (Current)
-- **LLM-Powered Triage:** Uses a dedicated, fast model (`llama-3.3-70b-versatile` on Groq) via LangGraph to evaluate the *semantic intent* of every message. The Triage Node looks at the chat history and makes an intellectual decision on whether it should engage, remain silent, or aggressively combat the user.
+### LARPAn1 Core Engine (v2)
+- **Centralized Configuration:** The load balancers were extracted into `app/core/llm_balancer.py`, and the model arrays were moved into a Pydantic `BaseSettings` object in `app/core/config.py`. 
+- **Environment Variables:** You can now swap models and API keys cleanly without touching the application logic, making deployments (like Render) completely seamless.
 
-**Verdict:** v2 possesses actual conversational awareness, unlike the rigid regex rules of v1.
+**Verdict:** The brilliant routing math from v1 was preserved, but the implementation was refactored into a scalable, environment-driven configuration module.
 
 ---
 
-## 5. Shortcomings & Missing Features in v2
+## 3. Database & State Management
 
-While v2 is a monumental upgrade, it currently lacks a few implementation details that must be addressed:
+### Original Ecosystem (v1)
+The `pymongo` implementation was baked directly into the route handlers. Every time a message arrived, the engine manually executed `db.collection.update_one` inside the Flask route. 
 
-1. **The Bridge Layers are Missing:** The core engine is flawless, but it is currently deaf and mute. We still need to build the lightweight Node.js or Python "Bridges" that connect Discord and WhatsApp to this central API.
-2. **Context Window Management:** While `GROUP_HISTORY_SLICE` exists in `config.py`, we need to ensure the MongoDB queries in `ChatRepository` don't eventually exceed the context window limits of Mistral-Large as the database grows to hundreds of thousands of messages. Token-aware truncation may need to be strictly enforced.
-3. **Graph Algorithms:** The `GraphRepository` stores nodes and edges perfectly. However, we have not yet written the advanced algorithms (like PageRank or Centrality) to calculate "Target Priority" or "Social Hierarchy" from the extracted graph data.
+### LARPAn1 Core Engine (v2)
+- **Repository Pattern:** Database interactions are fully abstracted into `app/db/repositories.py` (`ChatRepository`, `GroupHistoryRepository`, `MemoryRepository`, `GraphRepository`).
+- **Data Integrity:** If the database schema changes, you only update the repository class instead of hunting down 50 different `update_one` calls scattered across the LLM logic.
+
+**Verdict:** v2's repository pattern ensures the data layer remains entirely decoupled from the LLM logic, making it vastly safer to update or migrate databases in the future.
+
+---
+
+## 4. Shortcomings & Constraints in LARPAn1 (v2)
+
+While LARPAn1 solves the fragmentation and scaling issues of v1, there are still a few areas that require attention:
+
+1. **Context Window Degradation:** Both v1 and v2 rely on `GROUP_HISTORY_SLICE` to pull recent messages. However, as the `group_history` collections grow infinitely large, simply pulling a slice of 80 messages might eventually overwhelm smaller LLMs. Neither v1 nor v2 currently employs a strict Tokenizer-based truncation algorithm before hitting the LLM API.
+2. **Missing Outward Bridges:** The v1 ecosystem had multiple robust bridges (`psi-09-discord`, `psi-09-whatsapp`, `psi-09-pseudo-user`). LARPAn1 is currently just the isolated API brain; we still need to port those bridge scripts over to connect LARPAn1 to the outside world.
+3. **Graph Analysis Algorithms:** While the vRAG DSPy pipeline successfully extracts entities and relationships into MongoDB, we still need to port the `NetworkX` graph traversal algorithms (like PageRank) that the v1 `PSI-09-vRAG` used to calculate social hierarchy and determine Target Priority.
 
 ---
 
 ## Final Conclusion
-The **PSI-09 Core Engine v2** is a masterclass in modern AI agent architecture. It retains 100% of the psychological terror and profiling capabilities of the original PSI-09, but wraps it in a highly concurrent, load-balanced, and platform-agnostic infrastructure. Once the external bridges are attached, it will be unstoppable.
+LARPAn1 is not a reinvention of the wheel; it is the ultimate optimization of the original PSI-09 ecosystem. It takes the brilliant, chaotic, and decoupled genius of the original v1 scripts and structures them into a highly robust, unified FastAPI backend. Once the v1 Bridges and NetworkX algorithms are ported over, LARPAn1 will eclipse its predecessor in every measurable metric.
