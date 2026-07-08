@@ -34,7 +34,7 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         response = await dispatcher.dispatch(payload)
         
         # Schedule the background evolution safely without blocking the response
-        background_tasks.add_task(evolve_profile_task, user_key, payload.mode)
+        background_tasks.add_task(evolve_profile_task, user_key, payload.group_name, payload.mode)
         
         return response
         
