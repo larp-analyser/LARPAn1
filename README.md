@@ -121,6 +121,9 @@ Start the ASGI server using Uvicorn. The engine will bind to `0.0.0.0:7860` and 
 python run.py
 ```
 
+## Legacy Note (PSI-09)
+While the core architecture has been completely rewritten into LARPAn1, the underlying spirit of this engine remains deeply indebted to the original **PSI-09** proof-of-concept scripts. The legacy `RoastbotEngine` continues to honor the original prompt matrices that gave PSI-09 its infamous reputation.
+
 ---
 
 > *"They type to fill the void. We type to widen it."*  
