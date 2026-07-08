@@ -36,8 +36,7 @@ jobs:
         env:
           # You must create a GitHub Secret named HF_TOKEN containing your Hugging Face write token
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # IMPORTANT: Update this URL to match your Hugging Face username and space name!
-          HF_REPO_URL: "https://user:${HF_TOKEN}@huggingface.co/spaces/YOUR_HF_USERNAME/YOUR_SPACE_NAME"
+          HF_REPO_URL: "https://user:${HF_TOKEN}@huggingface.co/spaces/sudoboneman/LARPAn1"
         run: |
           git config --global user.email "bot@github.actions"
           git config --global user.name "GitHub Actions Bot"
