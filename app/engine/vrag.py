@@ -1,4 +1,5 @@
 import dspy
+import asyncio
 import logging
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
@@ -184,8 +185,6 @@ class VRAGEngine(BaseEngine):
             "reaction": None,
             "reasoning": "Triage bypassed combat engine. (Silence)"
         }
-        
-        import asyncio
         
         # Invoke LangGraph in a separate thread so DSPy doesn't block FastAPI's async event loop
         final_state = await asyncio.to_thread(compiled_vrag_agent.invoke, initial_state)

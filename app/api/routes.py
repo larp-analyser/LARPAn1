@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 
 router = APIRouter()
 
+# Singleton repository instances to avoid re-instantiation per request
+_chat_repo = ChatRepository()
+_group_repo = GroupHistoryRepository()
+_global_repo = GlobalHistoryRepository()
+
 @router.get("/")
 async def health_check():
     return {"status": "psi-09 core interface active", "version": "2.0.0"}
@@ -19,37 +24,53 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
     try:
         user_key = f"{payload.group_name}:{payload.username}"
         global_key = f"Global:{payload.username}"
+        is_private = payload.group_name == "private_chat"
         
-        # Save the message to the DB BEFORE dispatching
-        message_data = {
+        # --- 1. Store User Message ---
+        timestamp = datetime.now(timezone.utc).isoformat()
+        
+        local_entry = {
+            "role": "user",
             "username": payload.username,
             "content": payload.message,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": timestamp
         }
         
-        ChatRepository().store_message(user_key, message_data)
-        GlobalHistoryRepository().store_message(global_key, message_data)
+        # Global entry enriched with platform/group provenance
+        global_entry = {
+            "role": "user",
+            "username": payload.username,
+            "content": f"[Sent via {payload.platform} - {payload.group_name} #{payload.channel}] {payload.message}",
+            "timestamp": timestamp
+        }
         
-        if payload.group_name != "private_chat":
-            GroupHistoryRepository().store_message(payload.group_name, message_data)
+        _chat_repo.store_message(user_key, local_entry)
+        _global_repo.store_message(global_key, global_entry)
+        
+        if not is_private:
+            _group_repo.store_message(payload.group_name, local_entry)
 
-        # The dispatcher handles selecting the correct engine based on payload.mode
+        # --- 2. Dispatch to Engine ---
         response = await dispatcher.dispatch(payload)
         
-        # Save Assistant Reply Persistence
+        # --- 3. Store Assistant Reply ---
         if response.reply:
-            reply_data = {
+            reply_timestamp = datetime.now(timezone.utc).isoformat()
+            
+            reply_entry = {
+                "role": "assistant",
                 "username": "PSI-09",
                 "content": response.reply,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": reply_timestamp
             }
-            ChatRepository().store_message(user_key, reply_data)
-            GlobalHistoryRepository().store_message(global_key, reply_data)
             
-            if payload.group_name != "private_chat":
-                GroupHistoryRepository().store_message(payload.group_name, reply_data)
+            _chat_repo.store_message(user_key, reply_entry)
+            _global_repo.store_message(global_key, reply_entry)
+            
+            if not is_private:
+                _group_repo.store_message(payload.group_name, reply_entry)
         
-        # Schedule the background evolution safely without blocking the response
+        # --- 4. Schedule Background Evolution ---
         background_tasks.add_task(evolve_profile_task, user_key, payload.group_name, global_key, payload.mode)
         
         return response
