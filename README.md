@@ -129,6 +129,3 @@ While the core architecture has been completely rewritten into LARPAn1, the unde
 The legacy `RoastbotEngine` continues to honor the original prompt matrices that gave PSI-09 its infamous reputation.
 
 ---
-
-> *"They type to fill the void. We type to widen it."*  
-> **— LARPAn1 Protocol**
