@@ -122,7 +122,11 @@ python run.py
 ```
 
 ## Legacy Note (PSI-09)
-While the core architecture has been completely rewritten into LARPAn1, the underlying spirit of this engine remains deeply indebted to the original **PSI-09** proof-of-concept scripts. The legacy `RoastbotEngine` continues to honor the original prompt matrices that gave PSI-09 its infamous reputation.
+While the core architecture has been completely rewritten into LARPAn1, the underlying spirit of this engine remains deeply indebted to the original **PSI-09** proof-of-concept scripts:
+- [PSI-09 Production (Legacy Roastbot)](https://github.com/sudoboneman/PSI-09-production)
+- [PSI-09 vRAG (Experimental Graph Engine)](https://github.com/sudoboneman/PSI-09-vRAG)
+
+The legacy `RoastbotEngine` continues to honor the original prompt matrices that gave PSI-09 its infamous reputation.
 
 ---
 
