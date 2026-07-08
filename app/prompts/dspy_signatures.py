@@ -100,13 +100,19 @@ class TriageSignature(dspy.Signature):
     is_direct_interaction: str = dspy.InputField(desc="True if the human explicitly pinged @PSI-09.")
     decision: TriageDecision = dspy.OutputField(desc="Strict boolean routing decision.")
 
+class GraphEntity(BaseModel):
+    id: str = Field(description="The exact username or entity name.")
+    type: str = Field(description="The type of entity (e.g., 'User', 'Group', 'Concept').")
+    attributes: str = Field(description="Core traits, insecurities, or descriptive keywords found.")
+
 class GraphRelationship(BaseModel):
     source: str = Field(description="The source entity (e.g., 'User1')")
     relation: str = Field(description="The relationship (e.g., 'dislikes', 'created', 'is associated with')")
     target: str = Field(description="The target entity (e.g., 'ProjectX')")
+    intensity: float = Field(default=5.0, ge=1.0, le=10.0, description="Intensity of the relationship from 1.0 to 10.0.")
 
 class GraphExtractionDecision(BaseModel):
-    entities: list[str] = Field(default_factory=list, description="A list of key entities (people, concepts, projects) found in the text.")
+    entities: list[GraphEntity] = Field(default_factory=list, description="A list of key entities found in the text.")
     relationships: list[GraphRelationship] = Field(default_factory=list, description="A list of relationships between the extracted entities.")
 
 class GraphExtractionSignature(dspy.Signature):

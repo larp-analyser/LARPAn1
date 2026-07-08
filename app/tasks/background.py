@@ -24,8 +24,12 @@ async def evolve_profile_task(user_key: str, mode: str):
         history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in recent_history])
         
         existing_graph = graph_repo.get_user_graph(user_key)
-        existing_entities_str = ", ".join(existing_graph.get("entities", []))
-        existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']}" for r in existing_graph.get("relationships", [])])
+        existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", []) if isinstance(e, dict)])
+        if not existing_entities_str:
+            # Fallback for old string lists during transition
+            existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
+
+        existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
         
         extractor = dspy.TypedPredictor(GraphExtractionSignature)
         
@@ -52,7 +56,26 @@ async def evolve_profile_task(user_key: str, mode: str):
                     break
                     
         if new_graph_data:
-            merged_entities = list(set(existing_graph.get("entities", []) + new_graph_data.entities))
+            existing_entities_dict = {}
+            for e in existing_graph.get("entities", []):
+                if isinstance(e, str):
+                    existing_entities_dict[e] = {"id": e, "type": "Unknown", "attributes": ""}
+                else:
+                    existing_entities_dict[e["id"]] = e
+            
+            for new_ent in new_graph_data.entities:
+                if new_ent.id in existing_entities_dict:
+                    existing_attrs = existing_entities_dict[new_ent.id].get("attributes", "")
+                    if new_ent.attributes and new_ent.attributes not in existing_attrs:
+                        existing_entities_dict[new_ent.id]["attributes"] = f"{existing_attrs} | {new_ent.attributes}".strip(" |")
+                else:
+                    existing_entities_dict[new_ent.id] = {
+                        "id": new_ent.id,
+                        "type": new_ent.type,
+                        "attributes": new_ent.attributes
+                    }
+            
+            merged_entities = list(existing_entities_dict.values())
             
             existing_rels = existing_graph.get("relationships", [])
             seen_rels = {(r["source"], r["relation"], r["target"]) for r in existing_rels}
@@ -61,7 +84,12 @@ async def evolve_profile_task(user_key: str, mode: str):
                 rel_tuple = (rel.source, rel.relation, rel.target)
                 if rel_tuple not in seen_rels:
                     seen_rels.add(rel_tuple)
-                    existing_rels.append({"source": rel.source, "relation": rel.relation, "target": rel.target})
+                    existing_rels.append({
+                        "source": rel.source, 
+                        "relation": rel.relation, 
+                        "target": rel.target,
+                        "intensity": float(rel.intensity)
+                    })
                     
             updated_graph = {
                 "entities": merged_entities,

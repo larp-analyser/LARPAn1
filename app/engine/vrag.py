@@ -14,6 +14,7 @@ from app.prompts.dspy_signatures import (
 )
 from app.core.llm_balancer import triage_pool, nvidia_combat_pool
 from app.db.repositories import GraphRepository, ChatRepository, GroupHistoryRepository
+from app.engine.graph_analyzer import build_networkx_context
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +164,10 @@ class VRAGEngine(BaseEngine):
         
     def _format_graph(self, payload: IncomingPayload) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
-        graph_data = self.graph_repo.get_user_graph(user_key)
+        user_graph = self.graph_repo.get_user_graph(user_key)
+        group_graph = self.graph_repo.get_group_graph(payload.group_name)
         
-        # Simplified graph text representation for the DSPy signature
-        entities = ", ".join([e["id"] for e in graph_data.get("entities", [])])
-        rels = ", ".join([f"{r['source']} {r['relation']} {r['target']}" for r in graph_data.get("relationships", [])])
-        return f"Entities: {entities}\nRelationships: {rels}"
+        return build_networkx_context(payload.username, user_graph, group_graph)
         
     async def process(self, payload: IncomingPayload) -> EngineResponse:
         is_private = (payload.group_name == "private_chat")

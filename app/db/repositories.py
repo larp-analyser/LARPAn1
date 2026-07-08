@@ -65,3 +65,14 @@ class GraphRepository:
             {"$set": {"graph_data": graph_data, "last_updated": datetime.now(UTC)}},
             upsert=True
         )
+
+    def get_group_graph(self, group_name: str) -> dict:
+        doc = self.groups.find_one({"_id": group_name})
+        return doc.get("graph_data", {"entities": [], "relationships": []}) if doc else {"entities": [], "relationships": []}
+
+    def update_group_graph(self, group_name: str, graph_data: dict):
+        self.groups.update_one(
+            {"_id": group_name},
+            {"$set": {"graph_data": graph_data, "last_updated": datetime.now(UTC)}},
+            upsert=True
+        )
