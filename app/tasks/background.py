@@ -27,19 +27,14 @@ def _reset_counter(key: str):
     with _counter_lock:
         _msg_counters[key] = 0
 
-def _strip_snowflakes(text: str) -> str:
-    """Remove Discord snowflake mention strings and bare 17-19 digit IDs to prevent junk graph entities."""
-    clean = re.sub(r'<@!?&?\d+>', '', text)
-    clean = re.sub(r'\b\d{17,19}\b', '', clean)
-    return clean
+
 
 async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRepository, is_user: bool = True):
     if not history_docs:
         return
         
     history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
-    # Strip Discord snowflakes to prevent the graph extractor from creating junk entities
-    history_str = _strip_snowflakes(history_str)
+
     
     if is_user:
         existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
@@ -52,7 +47,11 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
 
     existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
     
-    target_focus_str = f"Deep psychological profile of user: {entity_key}" if is_user else "Map the social dynamics, relationships, and alliances between all active users."
+    if is_user:
+        username = entity_key.split(":", 1)[1] if ":" in entity_key else entity_key
+        target_focus_str = f"Deep psychological profile of user: {username}"
+    else:
+        target_focus_str = "Map the social dynamics, relationships, and alliances between all active users."
     
     extractor = dspy.Predict(GraphExtractionSignature)
     max_retries = len(background_pool.models) if background_pool.models else 1
@@ -223,7 +222,7 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
     group_repo = GroupHistoryRepository()
     global_history_repo = GlobalHistoryRepository()
     
-    if mode == "vrag":
+    if mode in ["vrag", "auto"]:
         # vRAG uses graph extraction — gate per user and group
         user_count = _increment_counter(f"vrag:{user_key}")
         graph_repo = GraphRepository()
