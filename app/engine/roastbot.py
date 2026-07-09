@@ -9,15 +9,6 @@ from app.prompts.roastbot_prompts import ROAST_PROMPT, GROUP_ROAST_PROMPT
 from app.core.config import settings
 from app.core.utils import sanitize_think_tags, trim_history_by_tokens
 
-def _clean_snowflakes(text: str) -> str:
-    """Replace Discord snowflake mention patterns with @PSI-09 for bot IDs, strip others."""
-    for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
-        if d_id:
-            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@PSI-09', text)
-    # Strip remaining snowflake mentions the bot doesn't own
-    text = re.sub(r'<@!?&?\d+>', '', text)
-    return text
-
 logger = logging.getLogger(__name__)
 
 async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRepository, max_targets: int = 3) -> list:
@@ -31,9 +22,9 @@ async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRe
         memory_key = f"Global:{username}"
         summary = await asyncio.to_thread(global_repo.get_profile, memory_key)
         if summary:
-            profiles.append(f'<bystander username="{username}" numeric_id="{uid}">\n{summary.strip()}\n</bystander>')
+            profiles.append(f'<bystander username="{username}" id="{uid}">\n{summary.strip()}\n</bystander>')
         else:
-            profiles.append(f'<bystander username="{username}" numeric_id="{uid}">\nNo intelligence gathered yet. Default to standard mockery.\n</bystander>')
+            profiles.append(f'<bystander username="{username}" id="{uid}">\nNo intelligence gathered yet. Default to standard mockery.\n</bystander>')
     return profiles
 
 
@@ -58,7 +49,7 @@ class RoastbotEngine(BaseEngine):
         for m in history_docs:
             role = m.get("role", "user")
             sender = "PSI-09" if role == "assistant" else m.get('username', 'Unknown')
-            content = _clean_snowflakes(m.get('content', ''))
+            content = m.get('content', '')
             chan = m.get("channel", "unknown")
             lines.append(f"[#{chan}] [{sender}]: {content}")
         return "\n".join(lines)
@@ -68,7 +59,7 @@ class RoastbotEngine(BaseEngine):
         is_private = (payload.group_name == "private_chat")
         
         # Clean the incoming message of Discord snowflakes
-        clean_message = _clean_snowflakes(payload.message)
+        clean_message = payload.message
         
         # 1. Triage / Engagement Check (Legacy Hardcoded Logic)
         will_reply = is_private or payload.force_reply or ("@psi-09" in clean_message.lower())

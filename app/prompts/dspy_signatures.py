@@ -123,6 +123,7 @@ class GraphExtractionSignature(dspy.Signature):
     Focus on extracting roasting material: insecurities, bad tech choices, failed projects, and embarrassing associations.
     """
 
+    target_focus: str = dspy.InputField(desc="The primary entity or group to focus the analysis on.")
     chat_history: str = dspy.InputField(desc="The user's recent chat history to analyze.")
     existing_entities: str = dspy.InputField(desc="Currently known entities in the graph.")
     existing_relationships: str = dspy.InputField(desc="Currently known relationships in the graph.")

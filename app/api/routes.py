@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 import asyncio
 import re
 
+from app.core.utils import normalize_bot_mentions
+
 router = APIRouter()
 
 # Singleton repository instances to avoid re-instantiation per request
@@ -19,13 +21,6 @@ _global_repo = GlobalHistoryRepository()
 async def health_check():
     return {"status": "psi-09 core interface active", "version": "2.0.0"}
 
-def _clean_discord_mentions(text: str) -> str:
-    """Replace Discord snowflake mention patterns with @PSI-09 for bot IDs."""
-    for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
-        if d_id:
-            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@PSI-09', text)
-    return text
-
 @router.post("/psi09", response_model=EngineResponse)
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):
     """
@@ -33,9 +28,12 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
     Legacy order: Generate roast FIRST → Store user message → Store bot reply → Background evolution
     """
     try:
-        # Sanitize Discord snowflake mentions before anything else
-        payload.message = _clean_discord_mentions(payload.message)
+        # Sanitize only bot mentions, preserve all other raw IDs
+        payload.message = normalize_bot_mentions(payload.message)
         
+        if payload.group_name.lower() in ["defaultgroup", "discord_dm"]:
+            payload.group_name = "private_chat"
+            
         user_key = f"{payload.group_name}:{payload.username}"
         global_key = f"Global:{payload.username}"
         is_private = payload.group_name == "private_chat"

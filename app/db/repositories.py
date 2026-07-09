@@ -113,6 +113,29 @@ class MemoryRepository:
         )
         _profile_cache.set(user_key, summary)
 
+class GroupMemoryRepository:
+    """Handles Roastbot's text-based group summaries"""
+    def __init__(self):
+        self.collection = MongoDB.get_collection("group_memory")
+
+    def get_profile(self, group_key: str) -> str:
+        cached = _profile_cache.get(f"group_{group_key}")
+        if cached is not None:
+            return cached
+            
+        doc = self.collection.find_one({"_id": group_key})
+        val = doc.get("summary", "") if doc else ""
+        _profile_cache.set(f"group_{group_key}", val)
+        return val
+        
+    def update_profile(self, group_key: str, summary: str):
+        self.collection.update_one(
+            {"_id": group_key},
+            {"$set": {"summary": summary, "last_updated": datetime.now(UTC)}},
+            upsert=True
+        )
+        _profile_cache.set(f"group_{group_key}", summary)
+
 class GlobalHistoryRepository:
     def __init__(self):
         self.collection = MongoDB.get_collection("global_history")

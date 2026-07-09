@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.llm_balancer import background_pool
 from app.core.utils import sanitize_think_tags
-from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository
+from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GroupMemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository
 from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GROUP_SUMMARY_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
 from app.prompts.dspy_signatures import GraphExtractionSignature
 
@@ -52,6 +52,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
 
     existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
     
+    target_focus_str = f"Deep psychological profile of user: {entity_key}" if is_user else "Map the social dynamics, relationships, and alliances between all active users."
+    
     extractor = dspy.Predict(GraphExtractionSignature)
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
@@ -62,6 +64,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             with dspy.context(lm=current_lm):
                 res = await asyncio.to_thread(
                     extractor,
+                    target_focus=target_focus_str,
                     chat_history=history_str,
                     existing_entities=existing_entities_str or "None",
                     existing_relationships=existing_rels_str or "None"
@@ -98,12 +101,15 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         merged_entities = list(existing_entities_dict.values())
         
         existing_rels = existing_graph.get("relationships", [])
-        seen_rels = {(r["source"], r["relation"], r["target"]) for r in existing_rels}
+        seen_rels = {(r["source"], r["relation"], r["target"]): i for i, r in enumerate(existing_rels)}
         
         for rel in new_graph_data.relationships:
             rel_tuple = (rel.source, rel.relation, rel.target)
-            if rel_tuple not in seen_rels:
-                seen_rels.add(rel_tuple)
+            if rel_tuple in seen_rels:
+                idx = seen_rels[rel_tuple]
+                existing_rels[idx]["intensity"] = float(rel.intensity)
+            else:
+                seen_rels[rel_tuple] = len(existing_rels)
                 existing_rels.append({
                     "source": rel.source, 
                     "relation": rel.relation, 
@@ -247,6 +253,7 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
     else:
         # Legacy Roastbot Text Profiling — gate per user, group, and global
         memory_repo = MemoryRepository()
+        group_memory_repo = GroupMemoryRepository()
         global_memory_repo = GlobalMemoryRepository()
         
         # --- User Profile ---
@@ -271,7 +278,7 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             if group_count >= settings.GROUP_SUMMARY_EVERY_N:
                 logger.info(f"[BACKGROUND] Group Summary triggered for {group_name} (count={group_count})")
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                await _evolve_text_profile(group_name, group_history, memory_repo, is_global=False, is_group=True)
+                await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
                 _reset_counter(f"rb_group:{group_name}")
         
         # --- Global Profile ---

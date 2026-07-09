@@ -12,9 +12,10 @@ class FailoverLMPool:
     def __init__(self, model_names: list, api_keys: list, pool_name: str):
         self.pool_name = pool_name
         self.models = []
-        for key in api_keys:
-            if key:
-                self.models.extend([dspy.LM(model=f"groq/{m}", api_key=key.strip()) for m in model_names])
+        for m in model_names:
+            for key in api_keys:
+                if key:
+                    self.models.append(dspy.LM(model=f"groq/{m}", api_key=key.strip()))
         self.index = 0
         self.lock = threading.Lock()
 
@@ -48,7 +49,7 @@ class NvidiaRoundRobinPool:
                     api_key=key,
                     temperature=0.8,
                     top_p=1.0,
-                    max_tokens=1024
+                    max_tokens=512
                 ))
         self.index = 0
         self.lock = threading.Lock()

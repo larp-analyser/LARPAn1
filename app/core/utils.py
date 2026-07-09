@@ -1,4 +1,15 @@
 import re
+from app.core.config import settings
+
+def normalize_bot_mentions(text: str) -> str:
+    """Replace only the bot's configured IDs with @PSI-09 so the LLM recognizes when it is addressed."""
+    if not text:
+        return ""
+    for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
+        if d_id:
+            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@PSI-09', text)
+            
+    return text
 
 def sanitize_think_tags(text: str) -> str:
     """Comprehensive think-tag sanitization matching the old 5-regex chain."""
