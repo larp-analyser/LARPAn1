@@ -86,7 +86,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
     try:
         undirected_G = G.to_undirected()
         # CPU Guardian Check: Bypass O(n^2 log n) community detection on micro-VM if graph is too large
-        if len(undirected_G.nodes) <= 2000:
+        if len(undirected_G.nodes) <= 500:
             factions = list(nx_comm.greedy_modularity_communities(undirected_G))
             user_faction = next((list(f) for f in factions if username in f), [])
             faction_str = ", ".join([u for u in user_faction if u != username]) if len(user_faction) > 1 else "Lone Wolf"
