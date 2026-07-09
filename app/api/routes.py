@@ -3,8 +3,10 @@ from app.api.models import IncomingPayload, EngineResponse
 from app.engine.dispatcher import dispatcher
 from app.tasks.background import evolve_profile_task
 from app.db.repositories import ChatRepository, GroupHistoryRepository, GlobalHistoryRepository
+from app.core.config import settings
 from datetime import datetime, timezone
 import asyncio
+import re
 
 router = APIRouter()
 
@@ -17,12 +19,22 @@ _global_repo = GlobalHistoryRepository()
 async def health_check():
     return {"status": "psi-09 core interface active", "version": "2.0.0"}
 
+def _clean_discord_mentions(text: str) -> str:
+    """Replace Discord snowflake mention patterns with @PSI-09 for bot IDs."""
+    for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
+        if d_id:
+            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@PSI-09', text)
+    return text
+
 @router.post("/psi09", response_model=EngineResponse)
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):
     """
     Unified entrypoint for all platform bridges.
     """
     try:
+        # Sanitize Discord snowflake mentions before anything else
+        payload.message = _clean_discord_mentions(payload.message)
+        
         user_key = f"{payload.group_name}:{payload.username}"
         global_key = f"Global:{payload.username}"
         is_private = payload.group_name == "private_chat"

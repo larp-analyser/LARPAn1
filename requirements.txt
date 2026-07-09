@@ -5,8 +5,6 @@ pydantic-settings
 pymongo
 certifi
 groq
-huggingface_hub
-transformers
 networkx
 dspy-ai
 langgraph

@@ -16,6 +16,7 @@ from app.prompts.dspy_signatures import (
 from app.core.llm_balancer import triage_pool, nvidia_combat_pool
 from app.db.repositories import GraphRepository, ChatRepository, GroupHistoryRepository
 from app.engine.graph_analyzer import build_networkx_context
+from app.core.utils import sanitize_think_tags
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,10 @@ def combat_node(state: CombatState):
             reply_val = res.reply if str(res.reply).lower() not in ["none", "null", ""] else ""
             reaction_val = res.reaction if str(res.reaction).lower() not in ["none", "null", ""] else None
             
+            # Sanitize think-tags from combat output (matching roastbot)
+            if reply_val:
+                reply_val = sanitize_think_tags(reply_val)
+            
             return {
                 "reply": reply_val,
                 "reaction": reaction_val,
@@ -173,12 +178,15 @@ class VRAGEngine(BaseEngine):
     async def process(self, payload: IncomingPayload) -> EngineResponse:
         is_private = (payload.group_name == "private_chat")
         
+        # Build descriptive location string (matching legacy vRAG)
+        location_str = "Private Direct Message" if is_private else f"Server: {payload.group_name} | Channel: #{payload.channel}"
+        
         initial_state = {
             "history": await self._format_history(payload),
             "graph": await self._format_graph(payload),
             "user": payload.username,
-            "message": payload.message,
-            "location": payload.channel if not is_private else "Direct Message",
+            "message": f"[{payload.username}]: {payload.message}",
+            "location": location_str,
             "is_direct": payload.force_reply or "@PSI-09" in payload.message,
             "should_engage": False,
             "reply": "",

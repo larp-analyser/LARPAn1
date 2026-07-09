@@ -1,13 +1,14 @@
 import logging
 import asyncio
 import threading
+import re
 import dspy
 from collections import defaultdict
 from app.core.config import settings
 from app.core.llm_balancer import background_pool
 from app.core.utils import sanitize_think_tags
 from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository
-from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
+from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GROUP_SUMMARY_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
 from app.prompts.dspy_signatures import GraphExtractionSignature
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,19 @@ def _reset_counter(key: str):
     with _counter_lock:
         _msg_counters[key] = 0
 
+def _strip_snowflakes(text: str) -> str:
+    """Remove Discord snowflake mention strings and bare 17-19 digit IDs to prevent junk graph entities."""
+    clean = re.sub(r'<@!?&?\d+>', '', text)
+    clean = re.sub(r'\b\d{17,19}\b', '', clean)
+    return clean
+
 async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRepository, is_user: bool = True):
     if len(history_docs) < 2:
         return
         
     history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
+    # Strip Discord snowflakes to prevent the graph extractor from creating junk entities
+    history_str = _strip_snowflakes(history_str)
     
     if is_user:
         existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
@@ -113,7 +122,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
 
-async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False):
+async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
     if len(history_docs) < 5:
         return
         
@@ -121,7 +130,10 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
     old_summary = await asyncio.to_thread(memory_repo.get_profile, entity_key)
     
     prompt = ""
-    if not old_summary:
+    if is_group:
+        # Groups always use the dedicated surveillance prompt — no first-contact distinction (matching legacy)
+        prompt = GROUP_SUMMARY_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+    elif not old_summary:
         if is_global:
             prompt = GLOBAL_FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
         else:
@@ -214,7 +226,7 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             if group_count >= settings.GROUP_SUMMARY_EVERY_N:
                 logger.info(f"[BACKGROUND] Group Summary triggered for {group_name} (count={group_count})")
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                await _evolve_text_profile(group_name, group_history, memory_repo, is_global=False)
+                await _evolve_text_profile(group_name, group_history, memory_repo, is_global=False, is_group=True)
                 _reset_counter(f"rb_group:{group_name}")
         
         # --- Global Profile ---
