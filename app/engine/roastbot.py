@@ -32,6 +32,8 @@ async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRe
         summary = await asyncio.to_thread(global_repo.get_profile, memory_key)
         if summary:
             profiles.append(f'<bystander username="{username}" numeric_id="{uid}">\n{summary.strip()}\n</bystander>')
+        else:
+            profiles.append(f'<bystander username="{username}" numeric_id="{uid}">\nNo intelligence gathered yet. Default to standard mockery.\n</bystander>')
     return profiles
 
 

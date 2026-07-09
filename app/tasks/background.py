@@ -4,6 +4,7 @@ import threading
 import re
 import dspy
 from collections import defaultdict
+from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.llm_balancer import background_pool
 from app.core.utils import sanitize_think_tags
@@ -112,7 +113,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 
         updated_graph = {
             "entities": merged_entities,
-            "relationships": existing_rels
+            "relationships": existing_rels,
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
         
         if is_user:
@@ -123,9 +125,10 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
 
 async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
-    # Strictly filter history so the LLM doesn't profile the bot's own roasts
+    # For individual profiles, we purely want the user's messages.
+    # For group profiles, we want everything, but we should make sure the LLM knows which is which.
     if is_group:
-        filtered_docs = [m for m in history_docs if m.get('role') != 'assistant' and m.get('username') != 'PSI-09']
+        filtered_docs = history_docs
     else:
         filtered_docs = [m for m in history_docs if m.get('role') == 'user']
         
@@ -141,22 +144,39 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         logger.info(f"[BACKGROUND] Initialized group stub for {entity_key}")
         return
         
-    history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in filtered_docs])
+    history_lines = []
+    for m in filtered_docs:
+        sender = "PSI-09" if m.get('role') == 'assistant' else m.get('username', 'Unknown')
+        history_lines.append(f"[{sender}]: {m.get('content', '')}")
+    history_str = "\n".join(history_lines)
     
-    prompt = ""
+    system_prompt = ""
+    user_prompt = ""
+    
     if is_group:
         # Groups always use the dedicated surveillance prompt — no first-contact distinction (matching legacy)
-        prompt = GROUP_SUMMARY_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+        system_prompt = GROUP_SUMMARY_PROMPT
+        user_prompt = f"<chat_history>\n{history_str}\n</chat_history>"
     elif not old_summary:
         if is_global:
-            prompt = GLOBAL_FIRST_CONTACT_PROMPT + f"\n\n<cross_platform_history>\n{history_str}\n</cross_platform_history>"
+            system_prompt = GLOBAL_FIRST_CONTACT_PROMPT
+            user_prompt = f"<cross_platform_history>\n{history_str}\n</cross_platform_history>"
         else:
-            prompt = FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+            system_prompt = FIRST_CONTACT_PROMPT
+            user_prompt = f"<chat_history>\n{history_str}\n</chat_history>"
     else:
         if is_global:
-            prompt = GLOBAL_EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<cross_platform_history>\n{history_str}\n</cross_platform_history>"
+            system_prompt = GLOBAL_EVOLUTION_PROMPT.replace("{old_summary}", old_summary)
+            user_prompt = f"<cross_platform_history>\n{history_str}\n</cross_platform_history>"
         else:
-            prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+            system_prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary)
+            user_prompt = f"<chat_history>\n{history_str}\n</chat_history>"
+            
+    # Structured chat completion feed (Fix #3)
+    llm_feed = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
         
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_profile = ""
@@ -164,7 +184,8 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
     for attempt in range(max_retries):
         try:
             current_lm, current_index = background_pool.get_current()
-            res = await asyncio.to_thread(current_lm, prompt)
+            # Send structured chat payload to Groq
+            res = await asyncio.to_thread(current_lm, messages=llm_feed)
             
             if isinstance(res, list) and len(res) > 0:
                 new_profile = res[0]
@@ -201,7 +222,17 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         user_count = _increment_counter(f"vrag:{user_key}")
         graph_repo = GraphRepository()
         
-        if user_count >= settings.EVOLVE_EVERY_N_MESSAGES:
+        # Check for First Contact
+        existing_user_graph = await asyncio.to_thread(graph_repo.get_user_graph, user_key)
+        is_first_contact = not existing_user_graph.get("entities") and not existing_user_graph.get("relationships")
+        
+        if is_first_contact:
+            logger.info(f"[BACKGROUND] First Contact Graph Extraction triggered for {user_key}")
+            user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+            await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
+            _reset_counter(f"vrag:{user_key}")
+        elif user_count >= settings.EVOLVE_EVERY_N_MESSAGES:
+            logger.info(f"[BACKGROUND] Evolution Graph Extraction triggered for {user_key} (count={user_count})")
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
             _reset_counter(f"vrag:{user_key}")

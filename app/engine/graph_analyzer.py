@@ -75,7 +75,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
         return f"--- TARGET DOSSIER: {username} ---\nNo known network connections. Target is socially isolated."
 
     try:
-        social_scores = nx.pagerank(G, weight='weight', max_iter=100, tol=1e-4)
+        social_scores = nx.pagerank(G, weight='weight', max_iter=50, tol=1e-4)
         target_score = social_scores.get(username, 0.0)
         ranked_users = sorted(social_scores.items(), key=lambda x: x[1], reverse=True)
         rank_index = next((i for i, v in enumerate(ranked_users) if v[0] == username), len(ranked_users))

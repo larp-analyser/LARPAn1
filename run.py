@@ -29,11 +29,6 @@ app.add_middleware(
 
 app.include_router(router)
 
-# Add a basic root route so Render health checks pass smoothly
-@app.get("/")
-def read_root():
-    return {"status": "LARPAn1 Engine is online", "api_route": "/psi09"}
-
 if __name__ == "__main__":
     # Render maps the dynamic port to the PORT environment variable (default 10000)
     port = int(os.environ.get("PORT", 10000))

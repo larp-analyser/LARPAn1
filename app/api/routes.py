@@ -30,6 +30,7 @@ def _clean_discord_mentions(text: str) -> str:
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):
     """
     Unified entrypoint for all platform bridges.
+    Legacy order: Generate roast FIRST → Store user message → Store bot reply → Background evolution
     """
     try:
         # Sanitize Discord snowflake mentions before anything else
@@ -38,24 +39,26 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         user_key = f"{payload.group_name}:{payload.username}"
         global_key = f"Global:{payload.username}"
         is_private = payload.group_name == "private_chat"
-        
-        # --- 1. Store User Message ---
         timestamp = datetime.now(timezone.utc).isoformat()
         
+        # --- 1. DISPATCH TO ENGINE FIRST (before storage, so history doesn't contain the current message) ---
+        response = await dispatcher.dispatch(payload)
+        
+        # --- 2. STORE USER MESSAGE (after engine runs, matching legacy order) ---
         local_entry = {
             "role": "user",
+            "user_id": payload.sender_id,
             "username": payload.username,
+            "display_name": payload.display_name,
+            "platform": payload.platform,
+            "channel": payload.channel,
             "content": payload.message,
             "timestamp": timestamp
         }
         
         # Global entry enriched with platform/group provenance
-        global_entry = {
-            "role": "user",
-            "username": payload.username,
-            "content": f"[Sent via {payload.platform} - {payload.group_name} #{payload.channel}] {payload.message}",
-            "timestamp": timestamp
-        }
+        global_entry = local_entry.copy()
+        global_entry["content"] = f"[Sent via {payload.platform} - {payload.group_name} #{payload.channel}] {payload.message}"
         
         await asyncio.to_thread(_chat_repo.store_message, user_key, local_entry)
         await asyncio.to_thread(_global_repo.store_message, global_key, global_entry)
@@ -63,18 +66,13 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         if not is_private:
             await asyncio.to_thread(_group_repo.store_message, payload.group_name, local_entry)
 
-        # --- 2. Dispatch to Engine ---
-        response = await dispatcher.dispatch(payload)
-        
-        # --- 3. Store Assistant Reply ---
+        # --- 3. STORE ASSISTANT REPLY (chronologically after user message) ---
         if response.reply:
-            reply_timestamp = datetime.now(timezone.utc).isoformat()
-            
             reply_entry = {
                 "role": "assistant",
                 "username": "PSI-09",
                 "content": response.reply,
-                "timestamp": reply_timestamp
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
             await asyncio.to_thread(_chat_repo.store_message, user_key, reply_entry)
@@ -82,7 +80,7 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
             if not is_private:
                 await asyncio.to_thread(_group_repo.store_message, payload.group_name, reply_entry)
         
-        # --- 4. Schedule Background Evolution ---
+        # --- 4. SCHEDULE BACKGROUND EVOLUTION ---
         background_tasks.add_task(evolve_profile_task, user_key, payload.group_name, global_key, payload.mode)
         
         return response

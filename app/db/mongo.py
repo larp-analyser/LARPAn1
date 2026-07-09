@@ -22,6 +22,21 @@ class MongoDB:
                 w="majority",
             )
             cls.db = cls.client["psi09"]
+            
+            # Start Keepalive Thread for Render
+            def keepalive():
+                import time
+                import logging
+                logger = logging.getLogger(__name__)
+                while cls.client is not None:
+                    try:
+                        cls.client.admin.command('ping')
+                    except Exception as e:
+                        logger.warning(f"Mongo keepalive failed: {e}")
+                    time.sleep(180)
+            
+            import threading
+            threading.Thread(target=keepalive, daemon=True).start()
     
     @classmethod
     def get_db(cls):
