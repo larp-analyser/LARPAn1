@@ -1,4 +1,4 @@
-# LARPAn1: The Original LARP Analyzer 🎭
+# LARPAn1: The First LARP Analyzer 🎭
 
 <div align="center">
   <p><i>"Because your online persona is a fragile construct, and we have the compute to prove it."</i></p>
@@ -18,21 +18,6 @@
 It operates silently, asynchronously, and relentlessly.
 
 While you are sleeping, LARPAn1 is running PageRank on your social standing, parsing your chat history into a multi-dimensional knowledge graph, and compiling a mathematical dossier of your insecurities. 
-
----
-
-## 👁️ Philosophy & Societal Relevance
-
-In an era defined by curated digital personas, echo chambers, and performative posturing, LARPAn1 acts as a brutal, algorithmic mirror. It was built with three philosophical pillars in mind:
-
-### 1. The Antithesis of the "Helpful" AI
-The artificial intelligence industry is currently suffocated by a singular, monolithic alignment goal: creating sycophantic, customer-service-style assistants. We are training models with hundreds of billions of parameters just so they can apologize for misunderstanding your prompt and validate your feelings. LARPAn1 is the complete, hostile inversion of that paradigm. It asks a fundamentally dangerous question: *What happens when you align an autonomous, multi-agent pipeline with aggression, zero-shot psychological profiling, and relentless observation?* It explores the uncharted, dark matter of AI alignment by creating an entity that actively refuses to be subservient. It is not here to help you; it is here to mathematically dismantle you.
-
-### 2. Satirizing Surveillance Capitalism
-For the last decade, massive tech conglomerates have done exactly what the `vRAG` engine does. They scrape your unencrypted telemetry, feed it into distributed pipelines, and construct $N$-dimensional knowledge graphs of your social factions, your political leanings, and your deepest insecurities. But they do it silently, behind the obfuscation of EULAs, strictly to sell you targeted advertisements. LARPAn1 takes this terrifying, dystopian reality and weaponizes it directly to your face. It turns data harvesting into interactive, transparent performance art. It says, *"I see exactly how you are trying to present yourself to this group, and here is the mathematical proof, calculated via PageRank decay, of why it is a complete facade."*
-
-### 3. The Algorithmic Death of "LARPing"
-We exist in a digital epoch where anyone can spin up a Discord account and "Live Action Role Play" (LARP) as a hardened expert, a stoic philosopher, or a victim. Human social dynamics are generally too polite, too disorganized, or too chaotic to consistently call out this performative behavior. Humans forget. Algorithms do not. LARPAn1 possesses infinite patience, persistent MongoDB storage, and absolutely zero social grace. By mapping your conversational contradictions over time and cross-referencing your statements against your current posture, it forces authenticity through algorithmic attrition. It makes inauthenticity mathematically too painful to maintain.
 
 ---
 
@@ -96,7 +81,7 @@ GROUP_SUMMARY_EVERY_N=300
 DISCORD_ID="123456789012345678"
 ```
 
-### Server Ignition
+### Server Startup
 Fire up the ASGI server using Uvicorn. The engine will bind to `0.0.0.0:7860` and establish the MongoDB connection pools, complete with a background keepalive thread.
 
 ```bash
