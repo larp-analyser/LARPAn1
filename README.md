@@ -1,4 +1,4 @@
-# LARPAn1: The Apex LARP Analyzer 🎭
+# LARPAn1: The Original LARP Analyzer 🎭
 
 <div align="center">
   <p><i>"Because your online persona is a fragile construct, and we have the compute to prove it."</i></p>
@@ -11,7 +11,7 @@
 
 ---
 
-## 🛑 What is this?
+## What is this?
 
 **LARPAn1** (LARP Analyzer, iteration 1) is a production-grade, highly concurrent agentic profiling engine. Built as the unified successor to the scattered PSI-09 ecosystem, LARPAn1 is designed to ingest high-volume, unfiltered chatroom telemetry, strip away performative human posturing (colloquially known as "LARP"), and systematically deconstruct the user's ego via advanced natural language processing. 
 
@@ -21,7 +21,7 @@ While you are sleeping, LARPAn1 is running PageRank on your social standing, par
 
 ---
 
-## 🧠 Bleeding-Edge Architecture
+## Bleeding-Edge Architecture
 
 LARPAn1 discards the monolithic, tightly coupled anti-patterns of its predecessors in favor of a clean, domain-driven FastAPI architecture. It acts as a headless backend, offering plug-and-play compatibility with any platform bridge (Discord, WhatsApp, Minecraft) capable of firing standard JSON payloads.
 
@@ -40,7 +40,7 @@ For those who prefer brute force. The high-throughput legacy mode falls back to 
 
 ---
 
-## ⚙️ Core Technical Features
+## Core Technical Features
 
 * **Asynchronous LLM Balancing:** Both Groq and NVIDIA NIM are shielded by bespoke, thread-safe load balancers (`FailoverLMPool` and `NvidiaRoundRobinPool`). If an API key hits a `429 Rate Limit`, the engine safely traps the error, shifts the pointer to the next key, and retries instantly. 
 * **Non-Blocking Surveillance:** A critical flaw in standard Python LLM applications is synchronous blocking. LARPAn1 wraps all DSPy inference inside `asyncio.to_thread()`, isolating CPU-heavy workloads and allowing the Uvicorn server to effortlessly juggle hundreds of concurrent payloads.
@@ -49,7 +49,7 @@ For those who prefer brute force. The high-throughput legacy mode falls back to 
 
 ---
 
-## 🛠️ Installation & Ignition
+## Installation & Startup
 
 LARPAn1 is designed for standard containerized or bare-metal execution environments (specifically optimized for strict constraints like Render's Free Tier).
 
@@ -90,7 +90,7 @@ python run.py
 
 ---
 
-## 📜 Legacy Lineage
+## Legacy Lineage
 While the core architecture has been completely rewritten from the ground up to create LARPAn1, the underlying spirit of this engine remains deeply indebted to the original **PSI-09** proof-of-concept scripts:
 - [PSI-09 Production (Legacy Roastbot)](https://github.com/sudoboneman/PSI-09-production)
 - [PSI-09 vRAG (Experimental Graph Engine)](https://github.com/sudoboneman/PSI-09-vRAG)
@@ -98,4 +98,4 @@ While the core architecture has been completely rewritten from the ground up to 
 The legacy `RoastbotEngine` embedded within LARPAn1 continues to honor the original prompt matrices that gave PSI-09 its infamous reputation.
 
 ---
-*Built with malice. Optimized for latency.*
+*Low-latency malice. There's no override.*
