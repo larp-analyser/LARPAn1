@@ -14,7 +14,7 @@ class IncomingPayload(BaseModel):
     group_name: str = Field(..., description="Server/group name, or 'discord_dm'")
     channel: str = Field(..., description="Channel name")
     tagged_users: List[TaggedUser] = Field(default_factory=list, description="Array of tagged users")
-    platform: Literal["discord", "whatsapp", "minecraft"] = Field(..., description="Origin platform")
+    platform: Literal["discord", "whatsapp", "minecraft", "twitter"] = Field(..., description="Origin platform")
     force_reply: bool = Field(default=False, description="Bypass mention checks and force engagement")
     mode: Literal["auto", "legacy", "vrag"] = Field(
         default="auto", 
