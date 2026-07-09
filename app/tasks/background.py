@@ -33,7 +33,7 @@ def _strip_snowflakes(text: str) -> str:
     return clean
 
 async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRepository, is_user: bool = True):
-    if len(history_docs) < 2:
+    if not history_docs:
         return
         
     history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
@@ -123,11 +123,25 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
 
 async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
-    if len(history_docs) < 5:
+    # Strictly filter history so the LLM doesn't profile the bot's own roasts
+    if is_group:
+        filtered_docs = [m for m in history_docs if m.get('role') != 'assistant' and m.get('username') != 'PSI-09']
+    else:
+        filtered_docs = [m for m in history_docs if m.get('role') == 'user']
+        
+    if not filtered_docs:
         return
         
-    history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
     old_summary = await asyncio.to_thread(memory_repo.get_profile, entity_key)
+    
+    # Handle New Group Stub
+    if is_group and len(filtered_docs) < 6:
+        stub = f"New group '{entity_key}' — Understand group dynamic and log observations."
+        await asyncio.to_thread(memory_repo.update_profile, entity_key, stub)
+        logger.info(f"[BACKGROUND] Initialized group stub for {entity_key}")
+        return
+        
+    history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in filtered_docs])
     
     prompt = ""
     if is_group:
@@ -135,12 +149,12 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         prompt = GROUP_SUMMARY_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
     elif not old_summary:
         if is_global:
-            prompt = GLOBAL_FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+            prompt = GLOBAL_FIRST_CONTACT_PROMPT + f"\n\n<cross_platform_history>\n{history_str}\n</cross_platform_history>"
         else:
             prompt = FIRST_CONTACT_PROMPT + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
     else:
         if is_global:
-            prompt = GLOBAL_EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
+            prompt = GLOBAL_EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<cross_platform_history>\n{history_str}\n</cross_platform_history>"
         else:
             prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary) + f"\n\n<chat_history>\n{history_str}\n</chat_history>"
         

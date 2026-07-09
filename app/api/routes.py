@@ -78,7 +78,6 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
             }
             
             await asyncio.to_thread(_chat_repo.store_message, user_key, reply_entry)
-            await asyncio.to_thread(_global_repo.store_message, global_key, reply_entry)
             
             if not is_private:
                 await asyncio.to_thread(_group_repo.store_message, payload.group_name, reply_entry)
