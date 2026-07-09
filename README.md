@@ -23,7 +23,7 @@ While you are sleeping, LARPAn1 is running PageRank on your social standing, par
 
 ## Bleeding-Edge Architecture
 
-LARPAn1 discards the monolithic, tightly coupled anti-patterns of its predecessors in favor of a clean, domain-driven FastAPI architecture. It acts as a headless backend, offering plug-and-play compatibility with any platform bridge (Discord, WhatsApp, Minecraft) capable of firing standard JSON payloads.
+LARPAn1 discards the monolithic, tightly coupled anti-patterns of its predecessors in favor of a clean, domain-driven FastAPI architecture. It acts as a headless backend, offering plug-and-play compatibility with any platform bridge (Discord, WhatsApp, Twitter) capable of firing standard JSON payloads.
 
 ### The Dual Engine Paradigm
 
