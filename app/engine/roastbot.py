@@ -71,7 +71,7 @@ class RoastbotEngine(BaseEngine):
         clean_message = _clean_snowflakes(payload.message)
         
         # 1. Triage / Engagement Check (Legacy Hardcoded Logic)
-        will_reply = is_private or payload.force_reply or ("@PSI-09" in clean_message)
+        will_reply = is_private or payload.force_reply or ("@psi-09" in clean_message.lower())
         if not will_reply:
             return EngineResponse(
                 reply=None,

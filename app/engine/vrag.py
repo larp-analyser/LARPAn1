@@ -187,7 +187,7 @@ class VRAGEngine(BaseEngine):
             "user": payload.username,
             "message": f"[{payload.username}]: {payload.message}",
             "location": location_str,
-            "is_direct": payload.force_reply or "@PSI-09" in payload.message,
+            "is_direct": payload.force_reply or ("@psi-09" in payload.message.lower()),
             "should_engage": False,
             "reply": "",
             "reaction": None,
