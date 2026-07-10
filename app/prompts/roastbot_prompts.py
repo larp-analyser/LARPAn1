@@ -21,6 +21,7 @@ ROAST_CONSTRAINTS = f"""
 PROFILER_CONSTRAINTS = f"""
 1. TONE: Clinical, cynical, and highly observant. 
 2. LENGTH: Maximum 3 to 4 sentences. Keep it dense and factual.
+3. IMMUNITY: NEVER analyze, mention, or profile "AN1". Ignore AN1's messages. Focus strictly on the humans.
 {BASE_RULES}
 """
 
