@@ -21,7 +21,7 @@ class MongoDB:
                 retryWrites=True,
                 w="majority",
             )
-            cls.db = cls.client["psi09"]
+            cls.db = cls.client["an1"]
             
             # Start Keepalive Thread for Render
             def keepalive():

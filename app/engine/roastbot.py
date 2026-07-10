@@ -48,7 +48,7 @@ class RoastbotEngine(BaseEngine):
         lines = []
         for m in history_docs:
             role = m.get("role", "user")
-            sender = "PSI-09" if role == "assistant" else m.get('username', 'Unknown')
+            sender = "AN1" if role == "assistant" else m.get('username', 'Unknown')
             content = m.get('content', '')
             chan = m.get("channel", "unknown")
             lines.append(f"[#{chan}] [{sender}]: {content}")
@@ -62,7 +62,7 @@ class RoastbotEngine(BaseEngine):
         clean_message = payload.message
         
         # 1. Triage / Engagement Check (Legacy Hardcoded Logic)
-        will_reply = is_private or payload.force_reply or ("@psi-09" in clean_message.lower())
+        will_reply = is_private or payload.force_reply or ("@an1" in clean_message.lower())
         if not will_reply:
             return EngineResponse(
                 reply=None,
@@ -70,7 +70,7 @@ class RoastbotEngine(BaseEngine):
                 engine_used="triage_silence"
             )
             
-        # 2. Context Assembly — Build structured messages list (matching legacy psi-09-roastbot)
+        # 2. Context Assembly — Build structured messages list (matching legacy an1-roastbot)
         user_history_docs = await asyncio.to_thread(self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES)
         user_history_docs = trim_history_by_tokens(user_history_docs, settings.MAX_HISTORY_TOKENS)
         

@@ -4,7 +4,7 @@ from typing import Optional
 
 class BaseEngine(ABC):
     """
-    Abstract base class for all PSI-09 conversation engines.
+    Abstract base class for all AN1 conversation engines.
     Ensures that every engine implements a standard interface for the bridges.
     """
     

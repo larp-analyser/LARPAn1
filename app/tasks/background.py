@@ -156,7 +156,7 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         
     history_lines = []
     for m in filtered_docs:
-        sender = "PSI-09" if m.get('role') == 'assistant' else m.get('username', 'Unknown')
+        sender = "AN1" if m.get('role') == 'assistant' else m.get('username', 'Unknown')
         history_lines.append(f"[{sender}]: {m.get('content', '')}")
     history_str = "\n".join(history_lines)
     
@@ -225,7 +225,7 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
 async def evolve_profile_task(user_key: str, group_name: str, global_key: str, mode: str):
     """
     Background task with message-count gating.
-    Profiles only evolve after every N messages, matching the old psi-09-roastbot behavior.
+    Profiles only evolve after every N messages, matching the old an1-roastbot behavior.
     """
     chat_repo = ChatRepository()
     group_repo = GroupHistoryRepository()

@@ -2,12 +2,12 @@ import re
 from app.core.config import settings
 
 def normalize_bot_mentions(text: str) -> str:
-    """Replace only the bot's configured IDs with @PSI-09 so the LLM recognizes when it is addressed."""
+    """Replace only the bot's configured IDs with @AN1 so the LLM recognizes when it is addressed."""
     if not text:
         return ""
     for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
         if d_id:
-            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@PSI-09', text)
+            text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@AN1', text)
             
     return text
 

@@ -33,7 +33,7 @@ class CombatState(TypedDict):
     reaction: Optional[str]
     reasoning: str
 
-class PSI09CombatEngine(dspy.Module):
+class AN1CombatEngine(dspy.Module):
     def __init__(self):
         super().__init__()
         self.identity = dspy.ChainOfThought(IdentitySignature)
@@ -68,7 +68,7 @@ class PSI09CombatEngine(dspy.Module):
             reasoning=full_reasoning
         )
 
-combat_engine = PSI09CombatEngine()
+combat_engine = AN1CombatEngine()
 triage_engine = dspy.Predict(TriageSignature)
 
 def triage_node(state: CombatState):
@@ -187,7 +187,7 @@ class VRAGEngine(BaseEngine):
             "user": payload.username,
             "message": f"[{payload.username}]: {payload.message}",
             "location": location_str,
-            "is_direct": payload.force_reply or ("@psi-09" in payload.message.lower()),
+            "is_direct": payload.force_reply or ("@an1" in payload.message.lower()),
             "should_engage": False,
             "reply": "",
             "reaction": None,

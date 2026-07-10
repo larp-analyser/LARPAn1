@@ -19,7 +19,7 @@ _global_repo = GlobalHistoryRepository()
 
 @router.get("/")
 async def health_check():
-    return {"status": "psi-09 core interface active", "version": "2.0.0"}
+    return {"status": "an1 core interface active", "version": "2.0.0"}
 
 @router.post("/cron/sweep")
 async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
@@ -29,7 +29,7 @@ async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret:
     background_tasks.add_task(hourly_sweep_task)
     return {"status": "sweep_scheduled"}
 
-@router.post("/psi09", response_model=EngineResponse)
+@router.post("/an1", response_model=EngineResponse)
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):
     """
     Unified entrypoint for all platform bridges.
@@ -76,7 +76,7 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         if response.reply:
             reply_entry = {
                 "role": "assistant",
-                "username": "PSI-09",
+                "username": "AN1",
                 "content": response.reply,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
