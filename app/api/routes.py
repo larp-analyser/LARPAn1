@@ -30,12 +30,15 @@ async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret:
     background_tasks.add_task(hourly_sweep_task)
     return {"status": "sweep_scheduled"}
 
+async def safe_teleprompter_task():
+    await asyncio.to_thread(run_teleprompter_task)
+
 @router.post("/cron/optimize")
 async def trigger_optimization(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
     if not x_cron_secret or x_cron_secret != settings.CRON_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized cron trigger")
         
-    background_tasks.add_task(run_teleprompter_task)
+    background_tasks.add_task(safe_teleprompter_task)
     return {"status": "optimization_scheduled"}
 
 @router.post("/an1", response_model=EngineResponse)

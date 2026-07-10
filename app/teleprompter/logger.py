@@ -1,4 +1,4 @@
-from app.db.core import MongoDB
+from app.db.mongo import MongoDB
 from datetime import datetime, timezone
 
 class OptimizationLogger:
