@@ -7,6 +7,8 @@ import os
 from app.engine.vrag import AN1CombatEngine
 from app.prompts.dspy_signatures import SelfInsultPreventionSignature
 from app.teleprompter.logger import OptimizationLogger
+from app.teleprompter.logger import OptimizationLogger
+from app.db.mongo import MongoDB
 from app.core.llm_balancer import nvidia_combat_pool
 
 logger = logging.getLogger(__name__)
@@ -64,14 +66,23 @@ def run_teleprompter_task():
             )
             
             # 5. Compile
-            student = AN1CombatEngine()
+            student = AN1CombatEngine(load_compiled=False)
             compiled_engine = teleprompter.compile(student, trainset=trainset)
             
-            # 6. Save optimized weights
-            save_dir = "app/teleprompter/compiled"
-            os.makedirs(save_dir, exist_ok=True)
-            compiled_engine.save(f"{save_dir}/combat_engine.json")
+            # 6. Save optimized weights temporarily and upload to MongoDB
+            temp_path = "/tmp/combat_engine.json"
+            compiled_engine.save(temp_path)
             
-        logger.info("[TELEPROMPTER] Compilation Complete! Weights saved.")
+            with open(temp_path, "r", encoding="utf-8") as f:
+                weights_json = f.read()
+                
+            weights_col = MongoDB.get_collection("compiled_weights")
+            weights_col.update_one(
+                {"_id": "combat_engine"},
+                {"$set": {"weights": weights_json}},
+                upsert=True
+            )
+            
+        logger.info("[TELEPROMPTER] Compilation Complete! Weights saved to MongoDB.")
     except Exception as e:
         logger.error(f"[TELEPROMPTER] Error during optimization: {e}")

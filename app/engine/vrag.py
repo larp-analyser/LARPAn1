@@ -36,7 +36,7 @@ class CombatState(TypedDict):
     reasoning: str
 
 class AN1CombatEngine(dspy.Module):
-    def __init__(self):
+    def __init__(self, load_compiled: bool = True):
         super().__init__()
         self.identity = dspy.ChainOfThought(IdentitySignature)
         self.mission = dspy.ChainOfThought(MissionSignature)
@@ -44,12 +44,20 @@ class AN1CombatEngine(dspy.Module):
         self.decision_engine = dspy.Predict(DecisionSignature) 
         self.safety_auditor = dspy.Predict(SelfInsultPreventionSignature)
         
-        # Detached Teleprompter Loading
-        compiled_path = "app/teleprompter/compiled/combat_engine.json"
-        import os
-        if os.path.exists(compiled_path):
+        # Detached Teleprompter Loading via MongoDB
+        if load_compiled:
             try:
-                self.load(compiled_path)
+                from app.db.mongo import MongoDB
+                import os
+                
+                weights_col = MongoDB.get_collection("compiled_weights")
+                doc = weights_col.find_one({"_id": "combat_engine"})
+                
+                if doc and "weights" in doc:
+                    temp_path = "/tmp/combat_engine.json"
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(doc["weights"])
+                    self.load(temp_path)
             except Exception:
                 pass # If loading fails, just proceed normally (bulletproof)
         
