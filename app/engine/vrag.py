@@ -16,7 +16,7 @@ from app.prompts.dspy_signatures import (
     SelfInsultPreventionSignature
 )
 from app.core.llm_balancer import triage_pool, nvidia_combat_pool
-from app.db.repositories import GraphRepository, ChatRepository, GroupHistoryRepository
+from app.db.repositories import GraphRepository, ChatRepository, GroupHistoryRepository, GlobalMemoryRepository
 from app.engine.graph_analyzer import build_networkx_context
 from app.core.utils import sanitize_think_tags
 
@@ -256,6 +256,22 @@ class VRAGEngine(BaseEngine):
     def engine_name(self) -> str:
         return "vrag"
         
+    async def _fetch_tagged_profiles(self, tagged_users: list, max_targets: int = 3) -> list:
+        global_repo = GlobalMemoryRepository()
+        profiles = []
+        for u in tagged_users[:max_targets]:
+            uid = getattr(u, 'id', '') or u.get('id', '') if isinstance(u, dict) else u.id
+            username = getattr(u, 'username', '') or u.get('username', '') if isinstance(u, dict) else u.username
+            if not username:
+                continue
+            memory_key = f"Global:{username}"
+            summary = await asyncio.to_thread(global_repo.get_profile, memory_key)
+            if summary:
+                profiles.append(f'<bystander username="{username}" id="{uid}">\n{summary.strip()}\n</bystander>')
+            else:
+                profiles.append(f'<bystander username="{username}" id="{uid}">\nNo intelligence gathered yet.\n</bystander>')
+        return profiles
+        
     async def _format_history(self, payload: IncomingPayload) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
         if payload.group_name == "private_chat":
@@ -276,6 +292,10 @@ class VRAGEngine(BaseEngine):
         is_private = (payload.group_name == "private_chat")
         history_str = await self._format_history(payload)
         graph_str = await self._format_graph(payload)
+        
+        tagged_profiles = await self._fetch_tagged_profiles(payload.tagged_users)
+        if tagged_profiles:
+            graph_str += "\n\n--- TAGGED BYSTANDER DOSSIERS ---\n" + "\n\n".join(tagged_profiles)
         
         # Build descriptive location string (matching legacy vRAG)
         location_str = "Private Direct Message" if is_private else f"Server: {payload.group_name} | Channel: #{payload.channel}"
