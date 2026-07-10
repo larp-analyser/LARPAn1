@@ -59,16 +59,30 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                     extraction_guidance=extraction_guidance
                 )
                 
-            # Graph Garbage Penalty Check
-            bad_entities = [
-                e.id for e in res.extracted_graph.entities 
-                if e.id.lower() in ["i", "he", "she", "they", "it", "someone", "you", "we", "us", "them", "me"]
+            # Graph Garbage Penalty Check and Programmatic AN1 Sanitization
+            forbidden_ids = {"an1", "system", "bot", "assistant"}
+            
+            safe_entities = [
+                e for e in res.extracted_graph.entities 
+                if str(e.id).lower() not in forbidden_ids
             ]
-            if bad_entities:
-                extraction_guidance = f"CRITICAL PENALTY: You extracted useless pronouns as entities ({', '.join(bad_entities)}). Graph nodes MUST be concrete usernames, distinct technologies, or specific nouns. Do not extract pronouns. Redo extraction."
-                raise ValueError(f"Pronoun extraction penalty triggered: {bad_entities}")
+            
+            safe_relationships = [
+                r for r in res.extracted_graph.relationships
+                if str(r.source).lower() not in forbidden_ids 
+                and str(r.target).lower() not in forbidden_ids
+            ]
+            
+            bad_entities = [
+                e for e in safe_entities
+                if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10
+            ]
+            
+            if len(bad_entities) > len(safe_entities) / 2:
+                logger.warning(f"[BACKGROUND] Extractor hallucinated poor entities. Retrying.")
+                continue
                 
-            new_graph_data = res.extracted_graph
+            new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
             break
         except Exception as e:
             logger.error(f"[BACKGROUND] Graph extraction failed: {e}")
