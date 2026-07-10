@@ -67,7 +67,10 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         for e in existing_graph.get("entities", []):
             if isinstance(e, str):
                 existing_entities_dict[e] = {"id": e, "type": "Unknown", "attributes": ""}
-            else:
+            elif isinstance(e, dict):
+                # Purge the eager lock stub to prevent data pollution
+                if e.get("attributes") == "Initializing...":
+                    continue
                 existing_entities_dict[e["id"]] = e
         
         for new_ent in new_graph_data.entities:
@@ -115,7 +118,11 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
     else:
         # First Contact Fallback: If extraction fails or yields nothing, inject a stub to break infinite loops.
-        if not existing_graph.get("entities") and not existing_graph.get("relationships"):
+        entities = existing_graph.get("entities", [])
+        is_empty = not entities and not existing_graph.get("relationships")
+        is_only_stub = len(entities) == 1 and isinstance(entities[0], dict) and entities[0].get("attributes") == "Initializing..."
+        
+        if is_empty or is_only_stub:
             logger.warning(f"[BACKGROUND] Empty vRAG extraction for {entity_key}. Injecting First Contact stub.")
             stub_graph = {
                 "entities": [{"id": "System", "type": "Metadata", "attributes": "Initialized without entities."}],
