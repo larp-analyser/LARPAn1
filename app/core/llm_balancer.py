@@ -49,7 +49,7 @@ class NvidiaRoundRobinPool:
                     api_key=key,
                     temperature=0.8,
                     top_p=1.0,
-                    max_tokens=512
+                    max_tokens=2048
                 ))
         self.index = 0
         self.lock = threading.Lock()
