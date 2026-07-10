@@ -85,11 +85,12 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
             await asyncio.to_thread(_group_repo.store_message, payload.group_name, local_entry)
 
         # --- 3. STORE ASSISTANT REPLY (chronologically after user message) ---
-        if response.reply:
+        if response.reply or response.reaction:
+            content = response.reply if response.reply else f"*[Reacts with {response.reaction}]*"
             reply_entry = {
                 "role": "assistant",
                 "username": "AN1",
-                "content": response.reply,
+                "content": content,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             

@@ -380,35 +380,35 @@ async def hourly_sweep_task():
                 logger.info(f"[SWEEP] Evolving vRAG User {user_key}")
                 history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
                 await _evolve_graph(user_key, history, graph_repo, is_user=True)
-                counter_repo.record_evolution(key, timestamp=sweep_time)
+                counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
                 
             elif key.startswith("vrag_group:"):
                 group_name = key.split("vrag_group:", 1)[1]
                 logger.info(f"[SWEEP] Evolving vRAG Group {group_name}")
                 history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_graph(group_name, history, graph_repo, is_user=False)
-                counter_repo.record_evolution(key, timestamp=sweep_time)
+                counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
                 
             elif key.startswith("rb:"):
                 user_key = key.split("rb:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy User {user_key}")
                 history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
                 await _evolve_text_profile(user_key, history, memory_repo, is_global=False)
-                counter_repo.record_evolution(key, timestamp=sweep_time)
+                counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
                 
             elif key.startswith("rb_group:"):
                 group_name = key.split("rb_group:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy Group {group_name}")
                 history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_text_profile(group_name, history, group_memory_repo, is_global=False, is_group=True)
-                counter_repo.record_evolution(key, timestamp=sweep_time)
+                counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
                 
             elif key.startswith("rb_global:"):
                 global_key = key.split("rb_global:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy Global {global_key}")
                 history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
                 await _evolve_text_profile(global_key, history, global_memory_repo, is_global=True)
-                counter_repo.record_evolution(key, timestamp=sweep_time)
+                counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
         except Exception as e:
             logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
             
