@@ -15,7 +15,7 @@ class FailoverLMPool:
         for m in model_names:
             for key in api_keys:
                 if key:
-                    self.models.append(dspy.LM(model=f"groq/{m}", api_key=key.strip()))
+                    self.models.append(dspy.LM(model=f"groq/{m}", api_key=key.strip(), max_tokens=2048))
         self.index = 0
         self.lock = threading.Lock()
 
@@ -76,8 +76,8 @@ background_pool = FailoverLMPool(
     pool_name="BACKGROUND"
 )
 
-nvidia_combat_pool = NvidiaRoundRobinPool(
-    api_keys=settings.nvidia_keys_list,
-    model_name=settings.ROAST_MODELS[0],
+nvidia_combat_pool = FailoverLMPool(
+    model_names=["llama-3.3-70b-versatile"],
+    api_keys=settings.groq_keys_list,
     pool_name="COMBAT"
 )
