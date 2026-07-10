@@ -247,7 +247,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         
         if group_name != "private_chat":
             group_count = counter_repo.increment(f"vrag_group:{group_name}")
-            if group_count >= settings.GROUP_SUMMARY_EVERY_N:
+            existing_group_graph = await asyncio.to_thread(graph_repo.get_group_graph, group_name)
+            is_group_first_contact = not existing_group_graph.get("entities") and not existing_group_graph.get("relationships")
+            
+            if is_group_first_contact and group_count >= 10:
+                logger.info(f"[BACKGROUND] vRAG Group First Contact triggered for {group_name}")
+                group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
+                await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
+                counter_repo.reset(f"vrag_group:{group_name}")
+            elif group_count >= settings.GROUP_SUMMARY_EVERY_N:
+                logger.info(f"[BACKGROUND] vRAG Group Summary triggered for {group_name} (count={group_count})")
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
                 counter_repo.reset(f"vrag_group:{group_name}")
@@ -280,9 +289,10 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             existing_group_profile = await asyncio.to_thread(group_memory_repo.get_profile, group_name)
             
             if existing_group_profile is None or existing_group_profile == "":
-                if group_count >= 5:
+                # Wait for 10 messages to bypass the legacy < 6 stub logic and guarantee a real LLM profile
+                if group_count >= 10:
                     logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
-                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=10)
+                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
                     await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
                     counter_repo.reset(f"rb_group:{group_name}")
             elif group_count >= settings.GROUP_SUMMARY_EVERY_N:
