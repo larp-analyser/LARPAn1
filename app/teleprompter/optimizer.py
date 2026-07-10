@@ -62,7 +62,7 @@ def run_teleprompter_task():
             teleprompter = BootstrapFewShot(
                 metric=combat_metric,
                 max_bootstrapped_demos=4,
-                max_labeled_demos=16
+                max_labeled_demos=4  # Kept low to preserve LLM creativity and prevent overfitting
             )
             
             # 5. Compile
