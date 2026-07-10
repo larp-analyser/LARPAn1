@@ -235,10 +235,12 @@ class CounterRepository:
         )
         return doc["count"] if doc else 1
 
-    def record_evolution(self, key: str):
+    def record_evolution(self, key: str, timestamp: datetime = None):
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc)
         self.collection.update_one(
             {"_id": key},
-            {"$set": {"count": 0, "last_evolution": datetime.now(UTC)}},
+            {"$set": {"count": 0, "last_evolution": timestamp}},
             upsert=True
         )
         
@@ -248,8 +250,8 @@ class CounterRepository:
                 "$match": {
                     "$expr": {
                         "$gt": [
-                            {"$ifNull": ["$last_activity", datetime.min.replace(tzinfo=UTC)]},
-                            {"$ifNull": ["$last_evolution", datetime.min.replace(tzinfo=UTC)]}
+                            {"$ifNull": ["$last_activity", datetime(1970, 1, 1, tzinfo=UTC)]},
+                            {"$ifNull": ["$last_evolution", datetime(1970, 1, 1, tzinfo=UTC)]}
                         ]
                     }
                 }

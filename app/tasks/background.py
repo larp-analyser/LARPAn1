@@ -236,14 +236,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         
         if is_first_contact:
             logger.info(f"[BACKGROUND] First Contact Graph Extraction triggered for {user_key}")
+            evolution_time = datetime.now(timezone.utc)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
-            counter_repo.record_evolution(f"vrag:{user_key}")
+            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time)
         elif user_count >= settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Evolution Graph Extraction triggered for {user_key} (count={user_count})")
+            evolution_time = datetime.now(timezone.utc)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
-            counter_repo.record_evolution(f"vrag:{user_key}")
+            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time)
         
         if group_name != "private_chat":
             group_count = counter_repo.record_activity(f"vrag_group:{group_name}")
@@ -252,14 +254,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             
             if is_group_first_contact and group_count >= 10:
                 logger.info(f"[BACKGROUND] vRAG Group First Contact triggered for {group_name}")
+                evolution_time = datetime.now(timezone.utc)
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
-                counter_repo.record_evolution(f"vrag_group:{group_name}")
+                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time)
             elif group_count >= settings.GROUP_SUMMARY_EVERY_N:
                 logger.info(f"[BACKGROUND] vRAG Group Summary triggered for {group_name} (count={group_count})")
+                evolution_time = datetime.now(timezone.utc)
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
-                counter_repo.record_evolution(f"vrag_group:{group_name}")
+                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time)
             
     else:
         # Legacy Roastbot Text Profiling — gate per user, group, and global
@@ -274,14 +278,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         if existing_user_profile is None or existing_user_profile == "":
             # First Contact — always run immediately
             logger.info(f"[BACKGROUND] First Contact triggered for {user_key}")
+            evolution_time = datetime.now(timezone.utc)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
-            counter_repo.record_evolution(f"rb:{user_key}")
+            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time)
         elif user_count >= settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Evolution triggered for {user_key} (count={user_count})")
+            evolution_time = datetime.now(timezone.utc)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
-            counter_repo.record_evolution(f"rb:{user_key}")
+            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time)
         
         # --- Group Profile ---
         if group_name != "private_chat":
@@ -292,14 +298,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                 # Wait for 10 messages to bypass the legacy < 6 stub logic and guarantee a real LLM profile
                 if group_count >= 10:
                     logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
+                    evolution_time = datetime.now(timezone.utc)
                     group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
                     await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
-                    counter_repo.record_evolution(f"rb_group:{group_name}")
+                    counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time)
             elif group_count >= settings.GROUP_SUMMARY_EVERY_N:
                 logger.info(f"[BACKGROUND] Group Summary triggered for {group_name} (count={group_count})")
+                evolution_time = datetime.now(timezone.utc)
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
-                counter_repo.record_evolution(f"rb_group:{group_name}")
+                counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time)
         
         # --- Global Profile ---
         global_count = counter_repo.record_activity(f"rb_global:{global_key}")
@@ -307,14 +315,16 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         
         if existing_global_profile is None or existing_global_profile == "":
             logger.info(f"[BACKGROUND] Global First Contact triggered for {global_key}")
+            evolution_time = datetime.now(timezone.utc)
             global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
             await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
-            counter_repo.record_evolution(f"rb_global:{global_key}")
+            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time)
         elif global_count >= settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Global Evolution triggered for {global_key} (count={global_count})")
+            evolution_time = datetime.now(timezone.utc)
             global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
             await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
-            counter_repo.record_evolution(f"rb_global:{global_key}")
+            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time)
 
 async def hourly_sweep_task():
     """
@@ -339,40 +349,41 @@ async def hourly_sweep_task():
         key = candidate["_id"]
         
         try:
+            sweep_time = datetime.now(timezone.utc)
             if key.startswith("vrag:"):
-                user_key = key.split("vrag:")[1]
+                user_key = key.split("vrag:", 1)[1]
                 logger.info(f"[SWEEP] Evolving vRAG User {user_key}")
                 history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
                 await _evolve_graph(user_key, history, graph_repo, is_user=True)
-                counter_repo.record_evolution(key)
+                counter_repo.record_evolution(key, timestamp=sweep_time)
                 
             elif key.startswith("vrag_group:"):
-                group_name = key.split("vrag_group:")[1]
+                group_name = key.split("vrag_group:", 1)[1]
                 logger.info(f"[SWEEP] Evolving vRAG Group {group_name}")
                 history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_graph(group_name, history, graph_repo, is_user=False)
-                counter_repo.record_evolution(key)
+                counter_repo.record_evolution(key, timestamp=sweep_time)
                 
             elif key.startswith("rb:"):
-                user_key = key.split("rb:")[1]
+                user_key = key.split("rb:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy User {user_key}")
                 history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
                 await _evolve_text_profile(user_key, history, memory_repo, is_global=False)
-                counter_repo.record_evolution(key)
+                counter_repo.record_evolution(key, timestamp=sweep_time)
                 
             elif key.startswith("rb_group:"):
-                group_name = key.split("rb_group:")[1]
+                group_name = key.split("rb_group:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy Group {group_name}")
                 history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_text_profile(group_name, history, group_memory_repo, is_global=False, is_group=True)
-                counter_repo.record_evolution(key)
+                counter_repo.record_evolution(key, timestamp=sweep_time)
                 
             elif key.startswith("rb_global:"):
-                global_key = key.split("rb_global:")[1]
+                global_key = key.split("rb_global:", 1)[1]
                 logger.info(f"[SWEEP] Evolving Legacy Global {global_key}")
                 history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
                 await _evolve_text_profile(global_key, history, global_memory_repo, is_global=True)
-                counter_repo.record_evolution(key)
+                counter_repo.record_evolution(key, timestamp=sweep_time)
         except Exception as e:
             logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
             
