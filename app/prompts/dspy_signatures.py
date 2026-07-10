@@ -9,6 +9,7 @@ class IdentitySignature(dspy.Signature):
     
     graph_context = dspy.InputField(desc="Known relationships and attributes of the target human from the knowledge graph.")
     target_user = dspy.InputField(desc="The human who is deserving of your critique.")
+    guidance = dspy.InputField(desc="Dynamic penalties or strict instructions to follow.")
     dynamic_persona = dspy.OutputField(desc="A strict definition of who AN1 is in this exact moment and how it views this specific human.")
 
 class MissionSignature(dspy.Signature):
@@ -124,9 +125,10 @@ class GraphExtractionSignature(dspy.Signature):
     """
 
     target_focus: str = dspy.InputField(desc="The primary entity or group to focus the analysis on.")
-    chat_history: str = dspy.InputField(desc="The user's recent chat history to analyze.")
-    existing_entities: str = dspy.InputField(desc="Currently known entities in the graph.")
-    existing_relationships: str = dspy.InputField(desc="Currently known relationships in the graph.")
+    chat_history = dspy.InputField(desc="The user's recent chat history to analyze.")
+    existing_entities = dspy.InputField(desc="Currently known entities in the graph.")
+    existing_relationships = dspy.InputField(desc="Currently known relationships in the graph.")
+    extraction_guidance = dspy.InputField(desc="Strict rules or penalties for extraction.")
     
     extracted_graph: GraphExtractionDecision = dspy.OutputField(desc="The newly extracted entities and relationships formatted strictly as JSON.")
 

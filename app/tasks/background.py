@@ -41,8 +41,9 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
     extractor = dspy.Predict(GraphExtractionSignature)
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
+    extraction_guidance = ""
     
-    for attempt in range(max_retries):
+    for attempt in range(max_retries * 2):
         try:
             current_lm, current_index = background_pool.get_current()
             with dspy.context(lm=current_lm):
@@ -51,15 +52,26 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                     target_focus=target_focus_str,
                     chat_history=history_str,
                     existing_entities=existing_entities_str or "None",
-                    existing_relationships=existing_rels_str or "None"
+                    existing_relationships=existing_rels_str or "None",
+                    extraction_guidance=extraction_guidance
                 )
+                
+            # Graph Garbage Penalty Check
+            bad_entities = [
+                e.id for e in res.extracted_graph.entities 
+                if e.id.lower() in ["i", "he", "she", "they", "it", "someone", "you", "we", "us", "them", "me"]
+            ]
+            if bad_entities:
+                extraction_guidance = f"CRITICAL PENALTY: You extracted useless pronouns as entities ({', '.join(bad_entities)}). Graph nodes MUST be concrete usernames, distinct technologies, or specific nouns. Do not extract pronouns. Redo extraction."
+                raise ValueError(f"Pronoun extraction penalty triggered: {bad_entities}")
+                
             new_graph_data = res.extracted_graph
             break
         except Exception as e:
             logger.error(f"[BACKGROUND] Graph extraction failed: {e}")
             if "429" in str(e) or "rate limit" in str(e).lower():
                 background_pool.advance(current_index)
-            else:
+            elif "Pronoun extraction penalty" not in str(e):
                 break
                 
     if new_graph_data:
