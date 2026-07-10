@@ -29,7 +29,7 @@ class CombatState(TypedDict):
     message: str
     location: str
     is_direct: bool
-    
+    force_engage: bool
     should_engage: bool
     reply: str
     reaction: Optional[str]
@@ -87,7 +87,7 @@ class AN1CombatEngine(dspy.Module):
         safety_trace = ""
         current_constraints = con_res.operational_constraints
         
-        for _ in range(3):
+        for attempt in range(3):
             if not dec_res.decision.reply:
                 break
                 
@@ -123,6 +123,13 @@ class AN1CombatEngine(dspy.Module):
                     needs_retry = True
             
             if needs_retry:
+                if attempt == 2:
+                    logger.error("Cognitive Penalty Loop exhausted. Erasing non-compliant draft.")
+                    dec_res.decision.reply = ""
+                    dec_res.decision.reaction = None
+                    dec_res.reasoning = "Silenced after 3 failed cognitive compliance checks."
+                    break
+                    
                 dec_res = self.decision_engine(
                     tactical_objective=miss_res.tactical_objective,
                     operational_constraints=current_constraints,
@@ -153,6 +160,10 @@ combat_engine = AN1CombatEngine()
 triage_engine = dspy.Predict(TriageSignature)
 
 def triage_node(state: CombatState):
+    if state.get("force_engage", False):
+        logger.info("Triage bypassed: Force engagement triggered (DM or Override).")
+        return {"should_engage": True}
+        
     max_retries = len(triage_pool.models) if triage_pool.models else 1
     
     for attempt in range(max_retries):
@@ -172,8 +183,6 @@ def triage_node(state: CombatState):
             logger.error(f"Triage Error: {e}")
             if "429" in str(e) or "rate limit" in str(e).lower():
                 triage_pool.advance(current_index)
-            else:
-                break
                 
     logger.error("ALL TRIAGE MODELS FAILED OR NONE CONFIGURED. Defaulting to False.")
     return {"should_engage": False}
@@ -265,17 +274,20 @@ class VRAGEngine(BaseEngine):
         
     async def process(self, payload: IncomingPayload) -> EngineResponse:
         is_private = (payload.group_name == "private_chat")
+        history_str = await self._format_history(payload)
+        graph_str = await self._format_graph(payload)
         
         # Build descriptive location string (matching legacy vRAG)
         location_str = "Private Direct Message" if is_private else f"Server: {payload.group_name} | Channel: #{payload.channel}"
         
         initial_state = {
-            "history": await self._format_history(payload),
-            "graph": await self._format_graph(payload),
+            "history": history_str,
+            "graph": graph_str,
             "user": payload.username,
-            "message": f"[{payload.username}]: {payload.message}",
-            "location": location_str,
+            "message": payload.message,
+            "location": payload.channel,
             "is_direct": payload.force_reply or ("@an1" in payload.message.lower()),
+            "force_engage": is_private or payload.force_reply,
             "should_engage": False,
             "reply": "",
             "reaction": None,
