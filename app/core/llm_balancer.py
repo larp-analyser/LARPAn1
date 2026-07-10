@@ -76,8 +76,8 @@ background_pool = FailoverLMPool(
     pool_name="BACKGROUND"
 )
 
-nvidia_combat_pool = FailoverLMPool(
-    model_names=["llama-3.3-70b-versatile"],
-    api_keys=settings.groq_keys_list,
+nvidia_combat_pool = NvidiaRoundRobinPool(
+    api_keys=settings.nvidia_keys_list,
+    model_name=settings.ROAST_MODELS[0],
     pool_name="COMBAT"
 )
