@@ -11,7 +11,8 @@ from app.prompts.dspy_signatures import (
     MissionSignature,
     ConstraintsSignature,
     DecisionSignature,
-    TriageSignature
+    TriageSignature,
+    SelfInsultPreventionSignature
 )
 from app.core.llm_balancer import triage_pool, nvidia_combat_pool
 from app.db.repositories import GraphRepository, ChatRepository, GroupHistoryRepository
@@ -40,6 +41,7 @@ class AN1CombatEngine(dspy.Module):
         self.mission = dspy.ChainOfThought(MissionSignature)
         self.constraints = dspy.ChainOfThought(ConstraintsSignature) 
         self.decision_engine = dspy.Predict(DecisionSignature) 
+        self.safety_auditor = dspy.Predict(SelfInsultPreventionSignature)
         
     def forward(self, history, graph, user, message, location):
         id_res = self.identity(graph_context=graph, target_user=user)
@@ -52,6 +54,36 @@ class AN1CombatEngine(dspy.Module):
             active_message=message
         )
         
+        # Self-Insult Prevention Loop
+        safety_trace = ""
+        current_constraints = con_res.operational_constraints
+        
+        for _ in range(2):
+            if not dec_res.decision.reply:
+                break
+                
+            audit_res = self.safety_auditor(
+                active_message=message,
+                proposed_reply=dec_res.decision.reply
+            )
+            
+            if audit_res.audit.is_self_roast:
+                logger.warning(f"Self-insult detected by SafetyAuditor! Penalty applied. Reason: {audit_res.audit.reasoning}")
+                safety_trace += f"| Penalty: {audit_res.audit.reasoning} "
+                
+                # Apply penalty feedback
+                current_constraints = f"{current_constraints}\nCRITICAL PENALTY: Your previous draft insulted AN1. DO NOT DO THIS. You must rewrite your response. Reason: {audit_res.audit.reasoning}"
+                
+                # Regenerate
+                dec_res = self.decision_engine(
+                    tactical_objective=miss_res.tactical_objective,
+                    operational_constraints=current_constraints,
+                    active_message=message
+                )
+            else:
+                safety_trace += "| Audit Passed "
+                break
+        
         final_method = dec_res.decision.response_method
         final_reaction = dec_res.decision.reaction
         final_reply = dec_res.decision.reply
@@ -59,6 +91,7 @@ class AN1CombatEngine(dspy.Module):
         full_reasoning = (
             f"ID Trace: {id_res.reasoning}\n"
             f"Mission Trace: {miss_res.reasoning}\n"
+            f"Safety Trace: {safety_trace.strip()}\n"
             f"Decision Trace: Selected {final_method}"
         )
         
