@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import time
 import threading
 from app.core.config import settings
+from pymongo import ReturnDocument
 
 UTC = timezone.utc
 
@@ -219,3 +220,24 @@ class GraphRepository:
             upsert=True
         )
         _graph_cache.set(f"group_{group_name}", graph_data)
+
+class CounterRepository:
+    """Handles persistent message counters across server restarts"""
+    def __init__(self):
+        self.collection = MongoDB.get_collection("msg_counters")
+
+    def increment(self, key: str) -> int:
+        doc = self.collection.find_one_and_update(
+            {"_id": key},
+            {"$inc": {"count": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        return doc["count"] if doc else 1
+
+    def reset(self, key: str):
+        self.collection.update_one(
+            {"_id": key},
+            {"$set": {"count": 0}},
+            upsert=True
+        )
