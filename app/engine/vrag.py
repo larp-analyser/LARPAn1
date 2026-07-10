@@ -54,10 +54,11 @@ class AN1CombatEngine(dspy.Module):
                 doc = weights_col.find_one({"_id": "combat_engine"})
                 
                 if doc and "weights" in doc:
-                    temp_path = "/tmp/combat_engine.json"
+                    temp_path = f"/tmp/combat_engine_boot_{os.getpid()}.json"
                     with open(temp_path, "w", encoding="utf-8") as f:
                         f.write(doc["weights"])
                     self.load(temp_path)
+                    os.remove(temp_path)
             except Exception:
                 pass # If loading fails, just proceed normally (bulletproof)
         

@@ -3,6 +3,8 @@ from dspy.teleprompt import BootstrapFewShot
 import logging
 import re
 import os
+import threading
+import tempfile
 
 from app.engine.vrag import AN1CombatEngine
 from app.prompts.dspy_signatures import SelfInsultPreventionSignature
@@ -13,7 +15,13 @@ from app.core.llm_balancer import nvidia_combat_pool
 
 logger = logging.getLogger(__name__)
 
+optimization_lock = threading.Lock()
+
 def run_teleprompter_task():
+    if not optimization_lock.acquire(blocking=False):
+        logger.warning("[TELEPROMPTER] Optimization is already running. Aborting concurrent request to prevent API and I/O exhaustion.")
+        return
+        
     try:
         logger.info("[TELEPROMPTER] Starting DSPy Optimization Side-Hustle...")
         
@@ -69,8 +77,10 @@ def run_teleprompter_task():
             student = AN1CombatEngine(load_compiled=False)
             compiled_engine = teleprompter.compile(student, trainset=trainset)
             
-            # 6. Save optimized weights temporarily and upload to MongoDB
-            temp_path = "/tmp/combat_engine.json"
+            # 6. Save optimized weights temporarily using process-isolated unique file
+            with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False) as tmp_file:
+                temp_path = tmp_file.name
+                
             compiled_engine.save(temp_path)
             
             with open(temp_path, "r", encoding="utf-8") as f:
@@ -83,6 +93,16 @@ def run_teleprompter_task():
                 upsert=True
             )
             
+            # 7. Hot-reload the live engine in memory
+            from app.engine.vrag import combat_engine
+            combat_engine.load(temp_path)
+            logger.info("[TELEPROMPTER] Live engine dynamically updated with new weights.")
+            
+            # Clean up unique temp file
+            os.remove(temp_path)
+            
         logger.info("[TELEPROMPTER] Compilation Complete! Weights saved to MongoDB.")
     except Exception as e:
         logger.error(f"[TELEPROMPTER] Error during optimization: {e}")
+    finally:
+        optimization_lock.release()
