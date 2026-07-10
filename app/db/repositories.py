@@ -235,12 +235,19 @@ class CounterRepository:
         )
         return doc["count"] if doc else 1
 
-    def record_evolution(self, key: str, timestamp: datetime = None):
+    def record_evolution(self, key: str, timestamp: datetime = None, threshold: int = None):
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
+            
+        update_op = {"$set": {"last_evolution": timestamp}}
+        if threshold is not None:
+            update_op["$inc"] = {"count": -threshold}
+        else:
+            update_op["$set"]["count"] = 0
+            
         self.collection.update_one(
             {"_id": key},
-            {"$set": {"count": 0, "last_evolution": timestamp}},
+            update_op,
             upsert=True
         )
         

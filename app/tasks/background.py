@@ -258,13 +258,13 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             # Eagerly inject stub to lock concurrent first contacts
             await asyncio.to_thread(graph_repo.update_user_graph, user_key, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
         elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Evolution Graph Extraction triggered for {user_key} (count={user_count})")
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
         
@@ -277,13 +277,13 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                 logger.info(f"[BACKGROUND] vRAG Group First Contact triggered for {group_name}")
                 await asyncio.to_thread(graph_repo.update_group_graph, group_name, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
                 evolution_time = datetime.now(timezone.utc)
-                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time)
+                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
             elif group_count == settings.GROUP_SUMMARY_EVERY_N:
                 logger.info(f"[BACKGROUND] vRAG Group Summary triggered for {group_name} (count={group_count})")
                 evolution_time = datetime.now(timezone.utc)
-                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time)
+                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
             
@@ -302,13 +302,13 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             await asyncio.to_thread(memory_repo.update_profile, user_key, "[INITIALIZING]")
             logger.info(f"[BACKGROUND] First Contact triggered for {user_key}")
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
         elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Evolution triggered for {user_key} (count={user_count})")
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
         
@@ -323,7 +323,7 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                     await asyncio.to_thread(group_memory_repo.update_profile, group_name, "[INITIALIZING]")
                     logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
                     evolution_time = datetime.now(timezone.utc)
-                    counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time)
+                    counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time, threshold=group_count)
                     group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
                     await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
             elif group_count == settings.GROUP_SUMMARY_EVERY_N:
@@ -341,13 +341,13 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             await asyncio.to_thread(global_memory_repo.update_profile, global_key, "[INITIALIZING]")
             logger.info(f"[BACKGROUND] Global First Contact triggered for {global_key}")
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
             global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
             await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
         elif global_count == settings.EVOLVE_EVERY_N_MESSAGES:
             logger.info(f"[BACKGROUND] Global Evolution triggered for {global_key} (count={global_count})")
             evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time)
+            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
             global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
             await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
 
