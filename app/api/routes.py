@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Header
 from app.api.models import IncomingPayload, EngineResponse
 from app.engine.dispatcher import dispatcher
 from app.tasks.background import evolve_profile_task, hourly_sweep_task
+from app.teleprompter.optimizer import run_teleprompter_task
 from app.db.repositories import ChatRepository, GroupHistoryRepository, GlobalHistoryRepository
 from app.core.config import settings
 from datetime import datetime, timezone
@@ -28,6 +29,14 @@ async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret:
         
     background_tasks.add_task(hourly_sweep_task)
     return {"status": "sweep_scheduled"}
+
+@router.post("/cron/optimize")
+async def trigger_optimization(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
+    if not x_cron_secret or x_cron_secret != settings.CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized cron trigger")
+        
+    background_tasks.add_task(run_teleprompter_task)
+    return {"status": "optimization_scheduled"}
 
 @router.post("/an1", response_model=EngineResponse)
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):

@@ -44,6 +44,15 @@ class AN1CombatEngine(dspy.Module):
         self.decision_engine = dspy.Predict(DecisionSignature) 
         self.safety_auditor = dspy.Predict(SelfInsultPreventionSignature)
         
+        # Detached Teleprompter Loading
+        compiled_path = "app/teleprompter/compiled/combat_engine.json"
+        import os
+        if os.path.exists(compiled_path):
+            try:
+                self.load(compiled_path)
+            except Exception:
+                pass # If loading fails, just proceed normally (bulletproof)
+        
     def forward(self, history, graph, user, message, location):
         identity_guidance = ""
         id_res = None
@@ -174,6 +183,13 @@ def combat_node(state: CombatState):
                     message=state["message"],
                     location=state["location"]
                 )
+            
+            # Wire to detached Teleprompter logs
+            try:
+                from app.teleprompter.logger import OptimizationLogger
+                OptimizationLogger().log_inference(state["history"], state["graph"], state["user"], state["message"], state["location"])
+            except Exception:
+                pass
             
             # Pydantic schema normalization
             reply_val = res.reply if str(res.reply).lower() not in ["none", "null", ""] else ""
