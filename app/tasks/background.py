@@ -67,11 +67,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 if str(e.id).lower() not in forbidden_ids
             ]
             
-            safe_relationships = [
-                r for r in res.extracted_graph.relationships
-                if str(r.source).lower() not in forbidden_ids 
-                and str(r.target).lower() not in forbidden_ids
-            ]
+            safe_relationships = res.extracted_graph.relationships
             
             bad_entities = [
                 e for e in safe_entities
