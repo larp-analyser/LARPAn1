@@ -222,22 +222,37 @@ class GraphRepository:
         _graph_cache.set(f"group_{group_name}", graph_data)
 
 class CounterRepository:
-    """Handles persistent message counters across server restarts"""
+    """Handles persistent message counters and hybrid time-based evolution tracking"""
     def __init__(self):
         self.collection = MongoDB.get_collection("msg_counters")
 
-    def increment(self, key: str) -> int:
+    def record_activity(self, key: str) -> int:
         doc = self.collection.find_one_and_update(
             {"_id": key},
-            {"$inc": {"count": 1}},
+            {"$inc": {"count": 1}, "$set": {"last_activity": datetime.now(UTC)}},
             upsert=True,
             return_document=ReturnDocument.AFTER
         )
         return doc["count"] if doc else 1
 
-    def reset(self, key: str):
+    def record_evolution(self, key: str):
         self.collection.update_one(
             {"_id": key},
-            {"$set": {"count": 0}},
+            {"$set": {"count": 0, "last_evolution": datetime.now(UTC)}},
             upsert=True
         )
+        
+    def get_sweep_candidates(self) -> list:
+        pipeline = [
+            {
+                "$match": {
+                    "$expr": {
+                        "$gt": [
+                            {"$ifNull": ["$last_activity", datetime.min.replace(tzinfo=UTC)]},
+                            {"$ifNull": ["$last_evolution", datetime.min.replace(tzinfo=UTC)]}
+                        ]
+                    }
+                }
+            }
+        ]
+        return list(self.collection.aggregate(pipeline))

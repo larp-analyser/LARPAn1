@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     DISCORD_ID_2: Optional[str] = None
 
     # Application Tuning
+    CRON_SECRET: str = "default_dev_secret"
     MEMORY_TTL: int = 500
     GROUP_HISTORY_MAX_MESSAGES: int = 50000
     GROUP_HISTORY_SLICE: int = 80
