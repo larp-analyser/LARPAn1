@@ -15,3 +15,5 @@ __pycache__/
 # IDEs
 .vscode/
 .idea/
+
+test_suite.py
