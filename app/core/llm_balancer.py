@@ -47,7 +47,7 @@ class NvidiaRoundRobinPool:
                     model=f"openai/{model_name}",
                     api_base="https://integrate.api.nvidia.com/v1",
                     api_key=key,
-                    temperature=0.8,
+                    temperature=1.0,
                     top_p=1.0,
                     max_tokens=2048
                 ))
