@@ -42,8 +42,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
     extraction_guidance = (
-        "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. AN1 is the system/bot itself. "
-        "Do NOT analyze, profile, or create relationships involving AN1. Focus entirely on the human users."
+        "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. YOU ARE AN1. (SELF-IDENTITY) "
+        "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users."
     )
     
     for attempt in range(max_retries * 2):

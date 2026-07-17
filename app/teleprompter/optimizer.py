@@ -52,9 +52,6 @@ def run_teleprompter_task():
             if len(reply_text) > 150:
                 return 0.0
                 
-            if re.search(r'\b(oh|ah|alas|ouais|voilà)\b', reply_text, re.IGNORECASE):
-                return 0.0
-                
             # Teacher model audit
             auditor = dspy.Predict(SelfInsultPreventionSignature)
             res = auditor(active_message=example.message, proposed_reply=reply_text)
@@ -69,8 +66,8 @@ def run_teleprompter_task():
         with dspy.context(lm=current_lm):
             teleprompter = BootstrapFewShot(
                 metric=combat_metric,
-                max_bootstrapped_demos=4,
-                max_labeled_demos=4  # Kept low to preserve LLM creativity and prevent overfitting
+                max_bootstrapped_demos=8,
+                max_labeled_demos=8  # Kept low to preserve LLM creativity and prevent overfitting
             )
             
             # 5. Compile
