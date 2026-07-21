@@ -20,7 +20,7 @@ _global_repo = GlobalHistoryRepository()
 
 @router.get("/")
 async def health_check():
-    return {"status": "an1 core interface active", "version": "2.0.0"}
+    return {"status": "an1 neural core active", "version": "1.0"}
 
 @router.post("/cron/sweep")
 async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):

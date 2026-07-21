@@ -9,14 +9,14 @@ import os
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("Initializing AN1 Core Engine v2...")
+    print("Initializing AN1 ...")
     MongoDB.connect()
     yield
     # Shutdown
     print("Shutting down gracefully...")
     MongoDB.disconnect()
 
-app = FastAPI(title="AN1 Core Engine", lifespan=lifespan)
+app = FastAPI(title="AN1 Neural Core", lifespan=lifespan)
 
 # Add CORS for any web-based bridges
 app.add_middleware(
