@@ -31,12 +31,11 @@ class Settings(BaseSettings):
     ROAST_MODELS: List[str] = ["z-ai/glm-5.2"]
     BACKGROUND_MODELS: List[str] = [
         "openai/gpt-oss-120b",
-        "llama-3.3-70b-versatile",
-        "meta-llama/llama-4-scout-17b-16e-instruct"
+        "qwen/qwen3.6-27b"
     ]
     TRIAGE_MODELS: List[str] = [
-        "openai/gpt-oss-120b",
-        "llama-3.3-70b-versatile"
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
     ]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
