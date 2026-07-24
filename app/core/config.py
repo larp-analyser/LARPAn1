@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     GROUP_SUMMARY_EVERY_N: int = 300
 
     # Model Pools
-    ROAST_MODELS: List[str] = ["z-ai/glm-5.2"]
+    ROAST_MODELS: List[str] = ["moonshotai/kimi-k2.6"]
     BACKGROUND_MODELS: List[str] = [
         "openai/gpt-oss-120b",
         "qwen/qwen3.6-27b",
