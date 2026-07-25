@@ -6,7 +6,7 @@ import dspy
 from collections import defaultdict
 from datetime import datetime, timezone
 from app.core.config import settings
-from app.core.llm_balancer import background_pool
+from app.core.llm_balancer import background_pool, nvidia_combat_pool
 from app.core.utils import sanitize_think_tags
 from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GroupMemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository, CounterRepository
 from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GROUP_SUMMARY_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
@@ -20,7 +20,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         
     history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
 
-    
     if is_user:
         existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
     else:
@@ -46,6 +45,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users."
     )
     
+    # Primary Attempt Loop (Background Groq Pool)
     for attempt in range(max_retries * 2):
         try:
             current_lm, current_index = background_pool.get_current()
@@ -59,20 +59,10 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                     extraction_guidance=extraction_guidance
                 )
                 
-            # Graph Garbage Penalty Check and Programmatic AN1 Sanitization
             forbidden_ids = {"an1", "system", "bot", "assistant"}
-            
-            safe_entities = [
-                e for e in res.extracted_graph.entities 
-                if str(e.id).lower() not in forbidden_ids
-            ]
-            
+            safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
             safe_relationships = res.extracted_graph.relationships
-            
-            bad_entities = [
-                e for e in safe_entities
-                if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10
-            ]
+            bad_entities = [e for e in safe_entities if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10]
             
             if len(bad_entities) > len(safe_entities) / 2:
                 logger.warning(f"[BACKGROUND] Extractor hallucinated poor entities. Retrying.")
@@ -86,6 +76,37 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 background_pool.advance(current_index)
             elif "Pronoun extraction penalty" not in str(e):
                 break
+
+    # Fallback Attempt (NVIDIA Round Robin Pool)
+    if not new_graph_data:
+        logger.warning(f"[BACKGROUND] Background pool exhausted for {entity_key}. Falling back to NVIDIA pool.")
+        try:
+            fallback_lm = nvidia_combat_pool.get_next()
+            with dspy.context(lm=fallback_lm):
+                res = await asyncio.to_thread(
+                    extractor,
+                    target_focus=target_focus_str,
+                    chat_history=history_str,
+                    existing_entities=existing_entities_str or "None",
+                    existing_relationships=existing_rels_str or "None",
+                    extraction_guidance=extraction_guidance
+                )
+            forbidden_ids = {"an1", "system", "bot", "assistant"}
+            safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
+            safe_relationships = res.extracted_graph.relationships
+            
+            bad_entities = [
+                e for e in safe_entities 
+                if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10
+            ]
+            
+            if len(bad_entities) > len(safe_entities) / 2:
+                logger.warning("[BACKGROUND] NVIDIA fallback hallucinated poor entities. Aborting extraction.")
+            else:
+                new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
+            
+        except Exception as fallback_err:
+            logger.error(f"[BACKGROUND] NVIDIA Fallback graph extraction failed: {fallback_err}")
                 
     if new_graph_data:
         existing_entities_dict = {}
@@ -93,7 +114,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             if isinstance(e, str):
                 existing_entities_dict[e] = {"id": e, "type": "Unknown", "attributes": ""}
             elif isinstance(e, dict):
-                # Purge the eager lock stub to prevent data pollution
                 if e.get("attributes") == "Initializing...":
                     continue
                 existing_entities_dict[e["id"]] = e
@@ -111,7 +131,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 }
         
         merged_entities = list(existing_entities_dict.values())
-        
         existing_rels = existing_graph.get("relationships", [])
         seen_rels = {(r["source"], r["relation"], r["target"]): i for i, r in enumerate(existing_rels)}
         
@@ -142,7 +161,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             
         logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
     else:
-        # First Contact Fallback: If extraction fails or yields nothing, inject a stub to break infinite loops.
         entities = existing_graph.get("entities", [])
         is_empty = not entities and not existing_graph.get("relationships")
         is_only_stub = len(entities) == 1 and isinstance(entities[0], dict) and entities[0].get("attributes") == "Initializing..."
@@ -160,8 +178,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 await asyncio.to_thread(graph_repo.update_group_graph, entity_key, stub_graph)
 
 async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
-    # For individual profiles, we purely want the user's messages.
-    # For group profiles, we want everything, but we should make sure the LLM knows which is which.
     if is_group:
         filtered_docs = history_docs
     else:
@@ -172,7 +188,6 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         
     old_summary = await asyncio.to_thread(memory_repo.get_profile, entity_key)
     
-    # Handle New Group Stub
     if is_group and len(filtered_docs) < 6:
         stub = f"New group '{entity_key}' — Understand group dynamic and log observations."
         await asyncio.to_thread(memory_repo.update_profile, entity_key, stub)
@@ -185,11 +200,7 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         history_lines.append(f"[{sender}]: {m.get('content', '')}")
     history_str = "\n".join(history_lines)
     
-    system_prompt = ""
-    user_prompt = ""
-    
     if is_group:
-        # Groups always use the dedicated surveillance prompt — no first-contact distinction (matching legacy)
         system_prompt = GROUP_SUMMARY_PROMPT
         user_prompt = f"<chat_history>\n{history_str}\n</chat_history>"
     elif not old_summary or old_summary == "[INITIALIZING]":
@@ -207,7 +218,6 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
             system_prompt = EVOLUTION_PROMPT.replace("{old_summary}", old_summary)
             user_prompt = f"<chat_history>\n{history_str}\n</chat_history>"
             
-    # Structured chat completion feed (Fix #3)
     llm_feed = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
@@ -216,10 +226,10 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
     max_retries = len(background_pool.models) if background_pool.models else 1
     new_profile = ""
     
+    # Primary Attempt Loop (Background Groq Pool)
     for attempt in range(max_retries):
         try:
             current_lm, current_index = background_pool.get_current()
-            # Send structured chat payload to Groq
             res = await asyncio.to_thread(current_lm, messages=llm_feed)
             
             if isinstance(res, list) and len(res) > 0:
@@ -235,13 +245,25 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
             else:
                 break
                 
+    # Fallback Attempt (NVIDIA Round Robin Pool)
+    if not new_profile:
+        logger.warning(f"[BACKGROUND] Background pool exhausted for profiling {entity_key}. Falling back to NVIDIA pool.")
+        try:
+            fallback_lm = nvidia_combat_pool.get_next()
+            res = await asyncio.to_thread(fallback_lm, messages=llm_feed)
+            if isinstance(res, list) and len(res) > 0:
+                new_profile = res[0]
+            else:
+                new_profile = str(res)
+        except Exception as fallback_err:
+            logger.error(f"[BACKGROUND] NVIDIA Fallback profiling failed: {fallback_err}")
+
     if new_profile:
         new_profile = sanitize_think_tags(new_profile)
         await asyncio.to_thread(memory_repo.update_profile, entity_key, new_profile)
         logger.info(f"[BACKGROUND] Successfully evolved profile for {entity_key}.")
     else:
         logger.warning(f"[BACKGROUND] Failed to generate profile for {entity_key}.")
-        # First Contact Fallback: Break the infinite loop if LLM fails on first contact
         if not old_summary:
             logger.warning(f"[BACKGROUND] Injecting fallback profile stub for {entity_key}.")
             await asyncio.to_thread(memory_repo.update_profile, entity_key, "Insufficient data for initial profile.")

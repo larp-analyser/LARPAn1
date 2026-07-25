@@ -166,6 +166,7 @@ def triage_node(state: CombatState):
         
     max_retries = len(triage_pool.models) if triage_pool.models else 1
     
+    # 1. Primary Attempt: Triage Failover Pool (Groq)
     for attempt in range(max_retries):
         try:
             current_lm, current_index = triage_pool.get_current()
@@ -177,14 +178,31 @@ def triage_node(state: CombatState):
                     is_direct_interaction=str(state["is_direct"]) 
                 )
             engage = res.decision.should_engage
-            logger.info(f"Triage processed by: {current_lm.model} | Engage: {engage}")
+            logger.info(f"Triage processed by Groq: {current_lm.model} | Engage: {engage}")
             return {"should_engage": engage}
         except Exception as e:
-            logger.error(f"Triage Error: {e}")
+            logger.error(f"Triage Error ({current_lm.model if 'current_lm' in locals() else 'unknown'}): {e}")
             if "429" in str(e) or "rate limit" in str(e).lower():
                 triage_pool.advance(current_index)
+
+    # 2. Fallback Attempt: NVIDIA Round Robin Pool
+    logger.warning("ALL TRIAGE GROQ MODELS EXHAUSTED. Failing over to NVIDIA Round Robin Pool.")
+    try:
+        fallback_lm = nvidia_combat_pool.get_next()
+        with dspy.context(lm=fallback_lm):
+            res = triage_engine(
+                chat_history=state["history"], 
+                active_message=state["message"],
+                location=state["location"],
+                is_direct_interaction=str(state["is_direct"]) 
+            )
+        engage = res.decision.should_engage
+        logger.info(f"Triage fallback processed by NVIDIA: {fallback_lm.model} | Engage: {engage}")
+        return {"should_engage": engage}
+    except Exception as fallback_err:
+        logger.error(f"NVIDIA Fallback Triage Failed: {fallback_err}")
                 
-    logger.error("ALL TRIAGE MODELS FAILED OR NONE CONFIGURED. Defaulting to False.")
+    logger.error("ALL TRIAGE AND FALLBACK MODELS FAILED. Defaulting to False.")
     return {"should_engage": False}
 
 def combat_node(state: CombatState):

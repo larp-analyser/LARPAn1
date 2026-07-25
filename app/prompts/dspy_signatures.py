@@ -78,7 +78,7 @@ class TriageDecision(BaseModel):
 
 class TriageSignature(dspy.Signature):
     """
-    Determine if AN1 should engage with the human or remain in superior silence.
+    Determine if AN1 should engage with the human or remain in silence.
     - Output True ONLY if: 
         1. The user explicitly pinged the bot (is_direct_interaction='True').
         2. OR they made a logically flawed/intellectually-challenging/stupid/nonsensical statement.

@@ -33,14 +33,11 @@ class Settings(BaseSettings):
         "openai/gpt-oss-120b",
         "qwen/qwen3.6-27b",
         "openai/gpt-oss-20b",
-        "llama-3.3-70b-versatile"
     ]
     TRIAGE_MODELS: List[str] = [
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
-        "llama-3.1-8b-instant",
-        "openai/gpt-oss-120b",
-        "llama-3.3-70b-versatile"
+        "openai/gpt-oss-120b"
     ]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
