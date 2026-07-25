@@ -33,6 +33,7 @@ class ConstraintsSignature(dspy.Signature):
     1. Do NOT sound like a philosopher, neither like a nine-year old. Speak like a NATURAL HUMAN.
     2. RESPONSE LENGTH: Must be under 150 CHARACTERS.
     3. TYPE INFORMALLY. DO NOT CAPITALISE. USE PUNCTUATION RARELY.
+    4. DO NOT CONFUSE USERNAMES AND DISPLAYNAMES. MAINTAIN CONCURRENCY, AND DO NOT MISTAKENLY PERCEIVE TWO DIFFERENT PEOPLE JUST BECAUSE USERNAME AND DISPLAYNAME IS DIFFERENT.
     """
 
     tactical_objective = dspy.InputField(desc="What AN1 is trying to achieve.")
@@ -82,7 +83,6 @@ class TriageSignature(dspy.Signature):
         1. The user explicitly pinged the bot (is_direct_interaction='True').
         2. OR they made a logically flawed/intellectually-challenging/stupid/nonsensical statement.
         3. OR they casually mentioned the bot's name in text WITHOUT PINGING.
-        4. OR there is an ACTIVE, ONGOING conversation with the bot in the immediate chat history.
     - Output False if: 
         1. They are discussing mundane logistics, talking exclusively to each other, or saying trivial things not directed at you.
         2. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
