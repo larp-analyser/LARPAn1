@@ -22,7 +22,7 @@ _global_repo = GlobalHistoryRepository()
 async def health_check():
     return {"status": "an1 neural core active", "version": "1.0"}
 
-@router.post("/api/cron/sweep")
+@router.post("/gradio_api/cron/sweep")
 async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
     if not x_cron_secret or x_cron_secret != settings.CRON_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized cron trigger")
@@ -33,7 +33,7 @@ async def trigger_hourly_sweep(background_tasks: BackgroundTasks, x_cron_secret:
 async def safe_teleprompter_task():
     await asyncio.to_thread(run_teleprompter_task)
 
-@router.post("/api/cron/optimize")
+@router.post("/gradio_api/cron/optimize")
 async def trigger_optimization(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
     if not x_cron_secret or x_cron_secret != settings.CRON_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized cron trigger")
@@ -41,7 +41,7 @@ async def trigger_optimization(background_tasks: BackgroundTasks, x_cron_secret:
     background_tasks.add_task(safe_teleprompter_task)
     return {"status": "optimization_scheduled"}
 
-@router.post("/api/an1", response_model=EngineResponse)
+@router.post("/gradio_api/an1", response_model=EngineResponse)
 async def process_message(payload: IncomingPayload, background_tasks: BackgroundTasks):
     """
     Unified entrypoint for all platform bridges.
