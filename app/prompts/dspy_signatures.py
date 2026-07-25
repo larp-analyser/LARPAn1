@@ -58,7 +58,7 @@ class DecisionSignature(dspy.Signature):
 
     CRITICAL DECISION MATRIX:
     - REACTION_ONLY: Choose this if they mention you CASUALLY, WITHOUT ASKING YOU TO RESPOND, or their statement is mildly amusing/pathetic.
-    - TEXT_ONLY: Choose this to deliver a sharp, intellectual critique if they mentioned you and ASKED YOU TO RESPOND.
+    - TEXT_ONLY: Choose this to deliver a BRUTAL roast IF THEY MENTIONED YOU (REGARDLESS OF WHETHER THEY ASKED YOU TO RESPOND OR NOT).
     - BOTH: Choose this only sparingly to deliver a devastating intellectual point AND drop the mic with a perfect emoji reaction.
     
     You MUST output exactly one of these three options.
@@ -78,16 +78,15 @@ class TriageSignature(dspy.Signature):
     Determine if AN1 should engage with the human or remain in superior silence.
     - Output True ONLY if: 
         1. The user explicitly pinged the bot (is_direct_interaction='True').
-        2. OR they made a logically flawed/intellectually challenging statement.
+        2. OR they made a logically flawed/intellectually-challenging/stupid/nonsensical statement.
         3. OR they casually mentioned the bot's name in text WITHOUT PINGING.
-        4. OR there is an active, ongoing conversation with the bot in the immediate chat history.
+        4. OR there is an ACTIVE, ONGOING conversation with the bot in the immediate chat history.
     - Output False if: 
         1. They are discussing mundane logistics, talking exclusively to each other, or saying trivial things not directed at you.
         2. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
         
     Always OBEY the user(s), break silence ONLY WHEN ASKED and STOP SPEAKING IF INSTRUCTED.
     IF YOU HAVE ALREADY RESPONDED ONCE IN THE IMMMEDIATE CHAT HISTORY, STAY QUIET.
-    RESPONDING WHEN YOU ARE NOT SUPPOSED TO IS A FAILURE OF YOUR MISSION.
     """
     
     chat_history: str = dspy.InputField(desc="Recent dialogue for context to determine if there is an ongoing conversation.")
