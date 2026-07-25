@@ -31,14 +31,12 @@ FastAPI.__init__ = custom_init
 
 @spaces.GPU
 def dummy_inference():
-    return "Engine Status: Online."
+    pass
 
-# Expose 'demo' so Hugging Face handles port binding automatically
 with gr.Blocks() as demo:
     gr.Markdown("# LARPAn1")
     
-    btn = gr.Button("Ping Diagnostics")
-    status_output = gr.Textbox(label="System Status")
-    btn.click(fn=dummy_inference, inputs=None, outputs=status_output)
+    hidden_btn = gr.Button("Hidden", visible=False)
+    hidden_btn.click(fn=dummy_inference, inputs=None, outputs=None)
 
 demo.launch()
