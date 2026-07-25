@@ -41,3 +41,6 @@ with gr.Blocks() as demo:
     gr.Markdown("# AN1 Engine Core")
     btn = gr.Button("Ping Diagnostics")
     btn.click(fn=dummy_inference, inputs=gr.Textbox(), outputs=gr.Textbox())
+    
+# Add this exact line to keep the server awake and bind to the ZeroGPU proxy
+demo.launch()
