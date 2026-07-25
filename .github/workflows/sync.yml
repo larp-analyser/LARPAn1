@@ -1,0 +1,56 @@
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Inject Hugging Face YAML into README
+        run: |
+          # Create the Hugging Face configuration block
+          cat << 'EOF' > hf_header.txt
+          ---
+          title: LARPAn1
+          emoji: ⚡
+          colorFrom: gray
+          colorTo: indigo
+          sdk: gradio
+          app_file: app.py
+          pinned: false
+          ---
+          
+          EOF
+          
+          # Prepend the block to the existing README.md
+          cat hf_header.txt README.md > temp_readme.md
+          mv temp_readme.md README.md
+
+      - name: Push to Hugging Face Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: sudoboneman
+          HF_SPACE_NAME: LARPAn1 
+        run: |
+          # Configure Git for the automated commit
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # Add the Hugging Face remote repository
+          git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
+          
+          # Stage the modified README and commit
+          git add README.md
+          git commit -m "Inject HF config and deploy [skip ci]"
+          
+          # Force push to the Hugging Face remote (overwrites the HF branch with your GH state)
+          git push --force hf HEAD:main
