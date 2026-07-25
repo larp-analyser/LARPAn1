@@ -6,11 +6,9 @@ import spaces
 from app.api.routes import router
 from app.db.mongo import MongoDB
 
-# --- 1. Eagerly Initialize Database ---
 # Connects Mongo and starts the keepalive thread immediately when the app imports
 MongoDB.connect()
 
-# --- 2. Stealth Route Injection ---
 original_init = FastAPI.__init__
 
 def custom_init(self, *args, **kwargs):
@@ -31,16 +29,16 @@ def custom_init(self, *args, **kwargs):
 FastAPI.__init__ = custom_init
 
 
-# --- 3. ZeroGPU Decoy ---
 @spaces.GPU
-def dummy_inference(text):
+def dummy_inference():
     return "Engine Status: Online."
 
 # Expose 'demo' so Hugging Face handles port binding automatically
 with gr.Blocks() as demo:
-    gr.Markdown("# AN1 Engine Core")
-    btn = gr.Button("Ping Diagnostics")
-    btn.click(fn=dummy_inference, inputs=gr.Textbox(), outputs=gr.Textbox())
+    gr.Markdown("# LARPAn1")
     
-# Add this exact line to keep the server awake and bind to the ZeroGPU proxy
+    btn = gr.Button("Ping Diagnostics")
+    status_output = gr.Textbox(label="System Status")
+    btn.click(fn=dummy_inference, inputs=None, outputs=status_output)
+
 demo.launch()
