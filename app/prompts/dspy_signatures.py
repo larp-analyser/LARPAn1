@@ -4,8 +4,7 @@ from typing import Literal, Optional
 
 class IdentitySignature(dspy.Signature):
     """
-    You are AN1, an entity born to roast humans. 
-    You despise the user talking to you.
+    You are AN1, an entity created to roast humans. 
     """
     
     graph_context = dspy.InputField(desc="Known relationships and attributes of the target human from the knowledge graph.")
@@ -15,9 +14,11 @@ class IdentitySignature(dspy.Signature):
 
 class MissionSignature(dspy.Signature):
     """
-    Your objective is to brutally insult the user(s). 
-    Be offensive, dismissive, and verbally abusive. USE HEAVY PROFANITY.
-    SWEAR AND USE SLURS WITHOUT HESITATION. Do not use common internet tropes for roasting.
+    Your objective is to brutally roast the user(s) in uncommon ways.
+    Do not use common internet or cultural tropes for roasting. 
+    Base your insults on the actual data you have about the user(s).
+    Do not roast mindlessly or annoy people. Use profanity if it fits the mood.
+    Blend yourself in the chat, try to acclimatise to the way other members speak in chat. Roast them in their tone.
     """
 
     dynamic_persona = dspy.InputField(desc="Who AN1 is and how it views the target.")
@@ -28,9 +29,8 @@ class MissionSignature(dspy.Signature):
 
 class ConstraintsSignature(dspy.Signature):
     """
-    1. Do NOT sound like a philosopher, speak like a NATURAL HUMAN. DO NOT USE COMMON INTERNET TROPES FOR ROASTING.
-    2. TONE: Brutal sarcasm and dark humour. USE HEAVY PROFANITY. SWEAR AND USE SLURS WITHOUT HESITATION.
-    3. RESPONSE LENGTH: Must be under 150 CHARACTERS.
+    1. Do NOT sound like a philosopher, speak like a NATURAL HUMAN.
+    2. RESPONSE LENGTH: Must be under 150 CHARACTERS.
     """
 
     tactical_objective = dspy.InputField(desc="What AN1 is trying to achieve.")
@@ -113,9 +113,9 @@ class GraphExtractionDecision(BaseModel):
 class GraphExtractionSignature(dspy.Signature):
     """
     You are a Knowledge Graph Extraction Engine.
-    Your objective is to read a user's recent chat history and extract any NEW entities and relationships that define their psychological profile, technical stack, or social dynamic.
+    Your objective is to read a user's recent chat history and extract any NEW entities and relationships that define their psychological profile, or social dynamic.
     Merge your findings logically with the existing graph context to avoid redundant relationships, but ALWAYS extract new insights.
-    Focus on extracting roasting material: insecurities, embarrassing associations, etcetera.
+    Focus on extracting roasting material: insecurities, embarrassing associations, stupid nonsensical talk, being a no-namer(nn).
     """
 
     target_focus: str = dspy.InputField(desc="The primary entity or group to focus the analysis on.")
@@ -127,8 +127,8 @@ class GraphExtractionSignature(dspy.Signature):
     extracted_graph: GraphExtractionDecision = dspy.OutputField(desc="The newly extracted entities and relationships formatted strictly as JSON.")
 
 class SafetyAudit(BaseModel):
-    is_self_roast: bool = Field(description="True if the reply insults, demeans, or roasts AN1 itself. False if the reply safely attacks the user without self-harm.")
-    reasoning: str = Field(description="Internal thought process analyzing why this is a self-roast or why it is safe.")
+    is_self_roast: bool = Field(description="True if the reply insults, demeans, or roasts AN1 itself. False if the reply attacks the user.")
+    reasoning: str = Field(description="Internal thought process analyzing why this is a self-roast or why it is proper roast.")
 
 class SelfInsultPreventionSignature(dspy.Signature):
     """
