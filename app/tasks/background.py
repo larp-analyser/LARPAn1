@@ -1,15 +1,27 @@
 import logging
 import asyncio
-import threading
-import re
 import dspy
-from collections import defaultdict
 from datetime import datetime, timezone
 from app.core.config import settings
-from app.core.llm_balancer import background_pool, nvidia_combat_pool
+from app.core.llm_balancer import background_pool
 from app.core.utils import sanitize_think_tags
-from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GroupMemoryRepository, GraphRepository, GlobalHistoryRepository, GlobalMemoryRepository, CounterRepository
-from app.prompts.roastbot_prompts import FIRST_CONTACT_PROMPT, EVOLUTION_PROMPT, GROUP_SUMMARY_PROMPT, GLOBAL_FIRST_CONTACT_PROMPT, GLOBAL_EVOLUTION_PROMPT
+from app.db.repositories import (
+    ChatRepository, 
+    GroupHistoryRepository, 
+    MemoryRepository, 
+    GroupMemoryRepository, 
+    GraphRepository, 
+    GlobalHistoryRepository, 
+    GlobalMemoryRepository, 
+    CounterRepository
+)
+from app.prompts.roastbot_prompts import (
+    FIRST_CONTACT_PROMPT, 
+    EVOLUTION_PROMPT, 
+    GROUP_SUMMARY_PROMPT, 
+    GLOBAL_FIRST_CONTACT_PROMPT, 
+    GLOBAL_EVOLUTION_PROMPT
+)
 from app.prompts.dspy_signatures import GraphExtractionSignature
 
 logger = logging.getLogger(__name__)
@@ -38,76 +50,36 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         target_focus_str = "Map the social dynamics, relationships, and alliances between all active users."
     
     extractor = dspy.Predict(GraphExtractionSignature)
-    max_retries = len(background_pool.models) if background_pool.models else 1
     new_graph_data = None
     extraction_guidance = (
         "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. YOU ARE AN1. (SELF-IDENTITY) "
         "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users."
     )
     
-    # Primary Attempt Loop (Background Groq Pool)
-    for attempt in range(max_retries * 2):
-        try:
-            current_lm, current_index = background_pool.get_current()
-            with dspy.context(lm=current_lm):
-                res = await asyncio.to_thread(
-                    extractor,
-                    target_focus=target_focus_str,
-                    chat_history=history_str,
-                    existing_entities=existing_entities_str or "None",
-                    existing_relationships=existing_rels_str or "None",
-                    extraction_guidance=extraction_guidance
-                )
-                
-            forbidden_ids = {"an1", "system", "bot", "assistant"}
-            safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
-            safe_relationships = res.extracted_graph.relationships
-            bad_entities = [e for e in safe_entities if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10]
-            
-            if len(bad_entities) > len(safe_entities) / 2:
-                logger.warning(f"[BACKGROUND] Extractor hallucinated poor entities. Retrying.")
-                continue
-                
+    try:
+        # FIX: Wrap the synchronous retry execution in a thread to prevent freezing FastAPI
+        res = await asyncio.to_thread(
+            background_pool.execute_with_retry,
+            extractor,
+            target_focus=target_focus_str,
+            chat_history=history_str,
+            existing_entities=existing_entities_str or "None",
+            existing_relationships=existing_rels_str or "None",
+            extraction_guidance=extraction_guidance
+        )
+        
+        forbidden_ids = {"an1", "system", "bot", "assistant"}
+        safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
+        safe_relationships = res.extracted_graph.relationships
+        bad_entities = [e for e in safe_entities if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10]
+        
+        if len(bad_entities) > len(safe_entities) / 2:
+            logger.warning("[BACKGROUND] Extractor hallucinated poor entities. Aborting update.")
+        else:
             new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
-            break
-        except Exception as e:
-            logger.error(f"[BACKGROUND] Graph extraction failed: {e}")
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                background_pool.advance(current_index)
-            elif "Pronoun extraction penalty" not in str(e):
-                break
+    except Exception as e:
+        logger.error(f"[BACKGROUND] Graph extraction failed across pool: {e}")
 
-    # Fallback Attempt (NVIDIA Round Robin Pool)
-    if not new_graph_data:
-        logger.warning(f"[BACKGROUND] Background pool exhausted for {entity_key}. Falling back to NVIDIA pool.")
-        try:
-            fallback_lm = nvidia_combat_pool.get_next()
-            with dspy.context(lm=fallback_lm):
-                res = await asyncio.to_thread(
-                    extractor,
-                    target_focus=target_focus_str,
-                    chat_history=history_str,
-                    existing_entities=existing_entities_str or "None",
-                    existing_relationships=existing_rels_str or "None",
-                    extraction_guidance=extraction_guidance
-                )
-            forbidden_ids = {"an1", "system", "bot", "assistant"}
-            safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
-            safe_relationships = res.extracted_graph.relationships
-            
-            bad_entities = [
-                e for e in safe_entities 
-                if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10
-            ]
-            
-            if len(bad_entities) > len(safe_entities) / 2:
-                logger.warning("[BACKGROUND] NVIDIA fallback hallucinated poor entities. Aborting extraction.")
-            else:
-                new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
-            
-        except Exception as fallback_err:
-            logger.error(f"[BACKGROUND] NVIDIA Fallback graph extraction failed: {fallback_err}")
-                
     if new_graph_data:
         existing_entities_dict = {}
         for e in existing_graph.get("entities", []):
@@ -223,13 +195,13 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         {"role": "user", "content": user_prompt}
     ]
         
-    max_retries = len(background_pool.models) if background_pool.models else 1
     new_profile = ""
+    max_attempts = 3
     
-    # Primary Attempt Loop (Background Groq Pool)
-    for attempt in range(max_retries):
+    for attempt in range(max_attempts):
         try:
-            current_lm, current_index = background_pool.get_current()
+            current_lm = background_pool.get_next()
+            # Raw LLM calls natively support async threading exactly like this
             res = await asyncio.to_thread(current_lm, messages=llm_feed)
             
             if isinstance(res, list) and len(res) > 0:
@@ -239,24 +211,7 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
                 
             break
         except Exception as e:
-            logger.error(f"[BACKGROUND] Profiling failed: {e}")
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                background_pool.advance(current_index)
-            else:
-                break
-                
-    # Fallback Attempt (NVIDIA Round Robin Pool)
-    if not new_profile:
-        logger.warning(f"[BACKGROUND] Background pool exhausted for profiling {entity_key}. Falling back to NVIDIA pool.")
-        try:
-            fallback_lm = nvidia_combat_pool.get_next()
-            res = await asyncio.to_thread(fallback_lm, messages=llm_feed)
-            if isinstance(res, list) and len(res) > 0:
-                new_profile = res[0]
-            else:
-                new_profile = str(res)
-        except Exception as fallback_err:
-            logger.error(f"[BACKGROUND] NVIDIA Fallback profiling failed: {fallback_err}")
+            logger.error(f"[BACKGROUND] Profiling attempt {attempt + 1} failed: {e}")
 
     if new_profile:
         new_profile = sanitize_think_tags(new_profile)
@@ -270,27 +225,20 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
 
 
 async def evolve_profile_task(user_key: str, group_name: str, global_key: str, mode: str):
-    """
-    Background task with message-count gating.
-    Profiles only evolve after every N messages, matching the old an1-roastbot behavior.
-    """
     chat_repo = ChatRepository()
     group_repo = GroupHistoryRepository()
     global_history_repo = GlobalHistoryRepository()
     counter_repo = CounterRepository()
     
     if mode in ["vrag", "auto"]:
-        # vRAG uses graph extraction — gate per user and group
         user_count = counter_repo.record_activity(f"vrag:{user_key}")
         graph_repo = GraphRepository()
         
-        # Check for First Contact
         existing_user_graph = await asyncio.to_thread(graph_repo.get_user_graph, user_key)
         is_first_contact = not existing_user_graph.get("entities") and not existing_user_graph.get("relationships")
         
         if is_first_contact:
             logger.info(f"[BACKGROUND] First Contact Graph Extraction triggered for {user_key}")
-            # Eagerly inject stub to lock concurrent first contacts
             await asyncio.to_thread(graph_repo.update_user_graph, user_key, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
             evolution_time = datetime.now(timezone.utc)
             counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
@@ -323,17 +271,14 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                 await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
             
     else:
-        # Legacy Roastbot Text Profiling — gate per user, group, and global
         memory_repo = MemoryRepository()
         group_memory_repo = GroupMemoryRepository()
         global_memory_repo = GlobalMemoryRepository()
         
-        # --- User Profile ---
         user_count = counter_repo.record_activity(f"rb:{user_key}")
         existing_user_profile = await asyncio.to_thread(memory_repo.get_profile, user_key)
         
         if existing_user_profile is None or existing_user_profile == "":
-            # Eagerly write lock stub
             await asyncio.to_thread(memory_repo.update_profile, user_key, "[INITIALIZING]")
             logger.info(f"[BACKGROUND] First Contact triggered for {user_key}")
             evolution_time = datetime.now(timezone.utc)
@@ -347,13 +292,11 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
             await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
         
-        # --- Group Profile ---
         if group_name != "private_chat":
             group_count = counter_repo.record_activity(f"rb_group:{group_name}")
             existing_group_profile = await asyncio.to_thread(group_memory_repo.get_profile, group_name)
             
             if existing_group_profile is None or existing_group_profile == "":
-                # Wait for 10 messages to bypass the legacy < 6 stub logic and guarantee a real LLM profile
                 if group_count == 10:
                     await asyncio.to_thread(group_memory_repo.update_profile, group_name, "[INITIALIZING]")
                     logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
@@ -368,7 +311,6 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                 group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
                 await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
         
-        # --- Global Profile ---
         global_count = counter_repo.record_activity(f"rb_global:{global_key}")
         existing_global_profile = await asyncio.to_thread(global_memory_repo.get_profile, global_key)
         
@@ -387,11 +329,6 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
 
 async def hourly_sweep_task():
-    """
-    Called by Fastcron hourly. Finds all entities that had activity since their last evolution
-    and forces an immediate evolution to catch up 'slow-burn' profiles.
-    Applies jitter to prevent 429 rate limit spikes.
-    """
     counter_repo = CounterRepository()
     chat_repo = ChatRepository()
     group_repo = GroupHistoryRepository()
@@ -447,7 +384,6 @@ async def hourly_sweep_task():
         except Exception as e:
             logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
             
-        # Jitter to avoid hammering APIs
         await asyncio.sleep(2)
         
     logger.info("[SWEEP] Completed hourly evolution sweep.")

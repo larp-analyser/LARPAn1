@@ -12,3 +12,5 @@ requests
 python-dotenv
 gradio
 spaces
+openai
+google-genai

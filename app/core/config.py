@@ -6,9 +6,11 @@ class Settings(BaseSettings):
     # MongoDB
     MONGO_URI: str = Field(..., description="MongoDB Connection URI")
 
-    # API Keys (Comma-separated for Round-Robin)
-    GROQ_API_KEYS: str = ""
+    # API Keys (Comma-separated strings from .env)
     NVIDIA_API_KEYS: str = ""
+    GROQ_API_KEYS: str = ""
+    GOOGLE_API_KEYS: str = ""
+    OPENAI_API_KEYS: str = ""
     HF_TOKEN: Optional[str] = None
 
     # Bot Identifiers
@@ -27,31 +29,43 @@ class Settings(BaseSettings):
     EVOLVE_EVERY_N_MESSAGES: int = 50
     GROUP_SUMMARY_EVERY_N: int = 300
 
-    # Model Pools
-    ROAST_MODELS: List[str] = ["z-ai/glm-5.2"]
-    BACKGROUND_MODELS: List[str] = [
+    # Provider Pools
+    NVIDIA_POOL: List[str] = [
+        "z-ai/glm-5.2"
+    ]
+    
+    GROQ_POOL: List[str] = [
         "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
         "qwen/qwen3.6-27b",
         "openai/gpt-oss-20b",
-        "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant"
     ]
-    TRIAGE_MODELS: List[str] = [
-        "openai/gpt-oss-20b",
-        "qwen/qwen3.6-27b",
-        "llama-3.1-8b-instant",
-        "llama-3.3-70b-versatile",
-        "openai/gpt-oss-120b"
+    
+    GOOGLE_POOL: List[str] = [
+        "gemini-3.1-flash-lite"
+    ]
+    
+    OPENAI_POOL: List[str] = [
+        "gpt-5.4-mini"
     ]
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def nvidia_keys_list(self) -> List[str]:
+        return [k.strip() for k in self.NVIDIA_API_KEYS.split(",") if k.strip()]
 
     @property
     def groq_keys_list(self) -> List[str]:
         return [k.strip() for k in self.GROQ_API_KEYS.split(",") if k.strip()]
 
     @property
-    def nvidia_keys_list(self) -> List[str]:
-        return [k.strip() for k in self.NVIDIA_API_KEYS.split(",") if k.strip()]
+    def google_keys_list(self) -> List[str]:
+        return [k.strip() for k in self.GOOGLE_API_KEYS.split(",") if k.strip()]
+
+    @property
+    def openai_keys_list(self) -> List[str]:
+        return [k.strip() for k in self.OPENAI_API_KEYS.split(",") if k.strip()]
 
 settings = Settings()

@@ -1,83 +1,210 @@
 import threading
 import logging
 import dspy
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-class FailoverLMPool:
+class ModularRoundRobinPool:
     """
-    Manages a pool of models for fallback in case of rate limits (429).
-    Useful for Groq where limits are strictly enforced on free/lower tiers.
+    Round-robin pool with isolated Primary and NVIDIA queues.
+    NVIDIA queue is dormant for general pools by default (use_nvidia_fallback = False).
+    The use_nvidia_fallback flag is completely programmer-driven.
+    When flag = True, it routes exclusively to the NVIDIA queue in round-robin.
     """
-    def __init__(self, model_names: list, api_keys: list, pool_name: str):
+    def __init__(self, pool_name: str):
         self.pool_name = pool_name
-        self.models = []
-        for m in model_names:
-            for key in api_keys:
-                if key:
-                    self.models.append(dspy.LM(model=f"groq/{m}", api_key=key.strip(), max_tokens=2048))
-        self.index = 0
+        self.primary_lm_pool = []
+        self.nvidia_lm_pool = []
+        
+        # Controlled flag: False by default (Strictly programmer-driven)
+        self.use_nvidia_fallback = False
+        
+        self.primary_index = 0
+        self.nvidia_index = 0
         self.lock = threading.Lock()
 
-    def get_current(self):
+    def enable_nvidia_fallback(self, enable: bool = True):
+        """Programmatically toggle the NVIDIA fallback flag on or off."""
         with self.lock:
-            if not self.models:
-                raise ValueError(f"[{self.pool_name}] No API key or models configured.")
-            return self.models[self.index], self.index
+            self.use_nvidia_fallback = enable
+            logger.info(f"[{self.pool_name}] NVIDIA fallback flag manually set to: {self.use_nvidia_fallback}")
 
-    def advance(self, failed_index: int):
+    def reset_pool(self):
+        """Resets the flag back to False and restarts queue indices."""
         with self.lock:
-            if self.index == failed_index:
-                self.index = (self.index + 1) % len(self.models)
-                logger.warning(f"[{self.pool_name}] Rate Limit! Failover triggered -> {self.models[self.index].model}")
-            return self.models[self.index]
+            self.use_nvidia_fallback = False
+            self.primary_index = 0
+            self.nvidia_index = 0
+            logger.info(f"[{self.pool_name}] Reset to default state (use_nvidia_fallback = False).")
 
+    def add_provider(self, api_keys: list, model_pool: list, provider_prefix: str, is_nvidia: bool = False, **kwargs):
+        """
+        Registers provider models into either the Primary or NVIDIA pool queue.
+        Iterates through all models for Key 1 before moving to Key 2.
+        """
+        api_keys = [k.strip() for k in (api_keys or []) if k and k.strip()]
+        model_pool = [m.strip() for m in (model_pool or []) if m and m.strip()]
 
-class NvidiaRoundRobinPool:
-    """
-    Distributes requests across multiple API keys sequentially.
-    Useful for NVIDIA NIM to maximize total throughput.
-    """
-    def __init__(self, api_keys: list, model_name: str, pool_name: str):
-        self.pool_name = pool_name
-        self.models = []
+        if not api_keys or not model_pool:
+            logger.info(f"[{self.pool_name}] Skipping provider prefix '{provider_prefix}' — Unconfigured.")
+            return
+
+        target_queue = self.nvidia_lm_pool if is_nvidia else self.primary_lm_pool
+
         for key in api_keys:
-            if key:
-                self.models.append(dspy.LM(
-                    model=f"openai/{model_name}",
-                    api_base="https://integrate.api.nvidia.com/v1",
-                    api_key=key,
-                    temperature=1.0,
-                    top_p=1.0,
-                    max_tokens=16384
-                ))
-        self.index = 0
-        self.lock = threading.Lock()
+            for model_name in model_pool:
+                full_model_name = model_name if model_name.startswith(provider_prefix) else f"{provider_prefix}{model_name}"
+                try:
+                    lm = dspy.LM(
+                        model=full_model_name,
+                        api_key=key,
+                        **kwargs
+                    )
+                    target_queue.append(lm)
+                except Exception as e:
+                    logger.error(f"[{self.pool_name}] Failed to initialize {full_model_name}: {e}")
 
     def get_next(self):
+        """
+        Gets the next model instance.
+        If use_nvidia_fallback is True, strictly pulls from nvidia_lm_pool.
+        Otherwise, pulls strictly from primary_lm_pool.
+        Does NOT automatically flip flags.
+        """
         with self.lock:
-            if not self.models:
-                raise ValueError(f"[{self.pool_name}] No NVIDIA API keys configured.")
-            current_model = self.models[self.index]
-            self.index = (self.index + 1) % len(self.models)
-            return current_model
+            if self.use_nvidia_fallback:
+                if not self.nvidia_lm_pool:
+                    raise RuntimeError(f"[{self.pool_name}] NVIDIA fallback active, but no NVIDIA instances are loaded!")
 
-from app.core.config import settings
+                current_lm = self.nvidia_lm_pool[self.nvidia_index]
+                self.nvidia_index = (self.nvidia_index + 1) % len(self.nvidia_lm_pool)
+                return current_lm
 
-triage_pool = FailoverLMPool(
-    model_names=settings.TRIAGE_MODELS, 
-    api_keys=settings.groq_keys_list, 
-    pool_name="TRIAGE"
-)
+            if not self.primary_lm_pool:
+                raise RuntimeError(f"[{self.pool_name}] No LM instances available in primary queue!")
 
-background_pool = FailoverLMPool(
-    model_names=settings.BACKGROUND_MODELS, 
-    api_keys=settings.groq_keys_list, 
-    pool_name="BACKGROUND"
-)
+            current_lm = self.primary_lm_pool[self.primary_index]
+            self.primary_index = (self.primary_index + 1) % len(self.primary_lm_pool)
+            return current_lm
 
-nvidia_combat_pool = NvidiaRoundRobinPool(
+    def execute_with_retry(self, dspy_program, *args, max_retries=None, **kwargs):
+        """
+        Executes a DSPy task. If a rate limit (429) occurs, it advances to the next model/key in the active queue.
+        The fallback flag remains strictly programmer-driven and is never toggled automatically.
+        """
+        with self.lock:
+            active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
+
+        max_attempts = max_retries or max(active_pool_len * 2, 3)
+        attempts = 0
+
+        while attempts < max_attempts:
+            try:
+                lm = self.get_next()
+                with dspy.context(lm=lm):
+                    return dspy_program(*args, **kwargs)
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "rate limit" in error_str or "quota" in error_str:
+                    attempts += 1
+                    logger.warning(f"[{self.pool_name}] 429 Rate limit on active model! Attempt {attempts}/{max_attempts}.")
+                else:
+                    raise e
+
+        raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) due to rate limits across active pool.")
+
+
+# =====================================================================
+# POOL INITIALIZATIONS
+# =====================================================================
+
+# 1. COMBAT POOL (Roasting Engine)
+# Loaded directly into Primary queue -> Always uses NVIDIA models strictly.
+nvidia_combat_pool = ModularRoundRobinPool(pool_name="COMBAT_NVIDIA")
+nvidia_combat_pool.add_provider(
     api_keys=settings.nvidia_keys_list,
-    model_name=settings.ROAST_MODELS[0],
-    pool_name="COMBAT"
+    model_pool=settings.NVIDIA_POOL,
+    provider_prefix="openai/",
+    is_nvidia=False, # Loaded directly into primary queue for roasting
+    api_base="https://integrate.api.nvidia.com/v1",
+    temperature=1.0,
+    top_p=1.0,
+    max_tokens=16384
+)
+
+
+# 2. TRIAGE POOL
+triage_pool = ModularRoundRobinPool(pool_name="TRIAGE_POOL")
+
+# Primary Queue (Google, Groq, OpenAI)
+triage_pool.add_provider(
+    api_keys=settings.google_keys_list,
+    model_pool=settings.GOOGLE_POOL,
+    provider_prefix="gemini/",
+    temperature=0.0,
+    max_tokens=2048
+)
+triage_pool.add_provider(
+    api_keys=settings.groq_keys_list,
+    model_pool=settings.GROQ_POOL,
+    provider_prefix="groq/",
+    temperature=0.0,
+    max_tokens=2048
+)
+triage_pool.add_provider(
+    api_keys=settings.openai_keys_list,
+    model_pool=settings.OPENAI_POOL,
+    provider_prefix="openai/",
+    temperature=0.0,
+    max_tokens=2048
+)
+
+# Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
+triage_pool.add_provider(
+    api_keys=settings.nvidia_keys_list,
+    model_pool=settings.NVIDIA_POOL,
+    provider_prefix="openai/",
+    is_nvidia=True,
+    api_base="https://integrate.api.nvidia.com/v1",
+    temperature=0.7,
+    max_tokens=2048
+)
+
+
+# 3. BACKGROUND POOL
+background_pool = ModularRoundRobinPool(pool_name="BACKGROUND_POOL")
+
+# Primary Queue (Google, Groq, OpenAI)
+background_pool.add_provider(
+    api_keys=settings.google_keys_list,
+    model_pool=settings.GOOGLE_POOL,
+    provider_prefix="gemini/",
+    temperature=0.7,
+    max_tokens=4096
+)
+background_pool.add_provider(
+    api_keys=settings.groq_keys_list,
+    model_pool=settings.GROQ_POOL,
+    provider_prefix="groq/",
+    temperature=0.7,
+    max_tokens=4096
+)
+background_pool.add_provider(
+    api_keys=settings.openai_keys_list,
+    model_pool=settings.OPENAI_POOL,
+    provider_prefix="openai/",
+    temperature=0.7,
+    max_tokens=4096
+)
+
+# Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
+background_pool.add_provider(
+    api_keys=settings.nvidia_keys_list,
+    model_pool=settings.NVIDIA_POOL,
+    provider_prefix="openai/",
+    is_nvidia=True,
+    api_base="https://integrate.api.nvidia.com/v1",
+    temperature=0.7,
+    max_tokens=4096
 )

@@ -60,7 +60,7 @@ class AN1CombatEngine(dspy.Module):
                     self.load(temp_path)
                     os.remove(temp_path)
             except Exception:
-                pass # If loading fails, just proceed normally (bulletproof)
+                pass
         
     def forward(self, history, graph, user, message, location):
         identity_guidance = ""
@@ -164,87 +164,53 @@ def triage_node(state: CombatState):
         logger.info("Triage bypassed: Force engagement triggered (DM or Override).")
         return {"should_engage": True}
         
-    max_retries = len(triage_pool.models) if triage_pool.models else 1
-    
-    # 1. Primary Attempt: Triage Failover Pool (Groq)
-    for attempt in range(max_retries):
-        try:
-            current_lm, current_index = triage_pool.get_current()
-            with dspy.context(lm=current_lm):
-                res = triage_engine(
-                    chat_history=state["history"], 
-                    active_message=state["message"],
-                    location=state["location"],
-                    is_direct_interaction=str(state["is_direct"]) 
-                )
-            engage = res.decision.should_engage
-            logger.info(f"Triage processed by Groq: {current_lm.model} | Engage: {engage}")
-            return {"should_engage": engage}
-        except Exception as e:
-            logger.error(f"Triage Error ({current_lm.model if 'current_lm' in locals() else 'unknown'}): {e}")
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                triage_pool.advance(current_index)
-
-    # 2. Fallback Attempt: NVIDIA Round Robin Pool
-    logger.warning("ALL TRIAGE GROQ MODELS EXHAUSTED. Failing over to NVIDIA Round Robin Pool.")
     try:
-        fallback_lm = nvidia_combat_pool.get_next()
-        with dspy.context(lm=fallback_lm):
-            res = triage_engine(
-                chat_history=state["history"], 
-                active_message=state["message"],
-                location=state["location"],
-                is_direct_interaction=str(state["is_direct"]) 
-            )
+        res = triage_pool.execute_with_retry(
+            triage_engine,
+            chat_history=state["history"],
+            active_message=state["message"],
+            location=state["location"],
+            is_direct_interaction=str(state["is_direct"])
+        )
         engage = res.decision.should_engage
-        logger.info(f"Triage fallback processed by NVIDIA: {fallback_lm.model} | Engage: {engage}")
+        logger.info(f"Triage processed | Engage: {engage}")
         return {"should_engage": engage}
-    except Exception as fallback_err:
-        logger.error(f"NVIDIA Fallback Triage Failed: {fallback_err}")
-                
-    logger.error("ALL TRIAGE AND FALLBACK MODELS FAILED. Defaulting to False.")
-    return {"should_engage": False}
+    except Exception as e:
+        logger.error(f"Triage Execution Error: {e}")
+        return {"should_engage": False}
 
 def combat_node(state: CombatState):
-    max_retries = len(nvidia_combat_pool.models) if nvidia_combat_pool.models else 1
-    
-    for attempt in range(max_retries):
+    try:
+        res = nvidia_combat_pool.execute_with_retry(
+            combat_engine,
+            history=state["history"],
+            graph=state["graph"],
+            user=state["user"],
+            message=state["message"],
+            location=state["location"]
+        )
+        
+        # Wire to detached Teleprompter logs
         try:
-            current_lm = nvidia_combat_pool.get_next()
-            with dspy.context(lm=current_lm):
-                res = combat_engine(
-                    history=state["history"], 
-                    graph=state["graph"], 
-                    user=state["user"], 
-                    message=state["message"],
-                    location=state["location"]
-                )
-            
-            # Wire to detached Teleprompter logs
-            try:
-                from app.teleprompter.logger import OptimizationLogger
-                OptimizationLogger().log_inference(state["history"], state["graph"], state["user"], state["message"], state["location"])
-            except Exception:
-                pass
-            
-            # Pydantic schema normalization
-            reply_val = res.reply if str(res.reply).lower() not in ["none", "null", ""] else ""
-            reaction_val = res.reaction if str(res.reaction).lower() not in ["none", "null", ""] else None
-            
-            # Sanitize think-tags from combat output (matching roastbot)
-            if reply_val:
-                reply_val = sanitize_think_tags(reply_val)
-            
-            return {
-                "reply": reply_val,
-                "reaction": reaction_val,
-                "reasoning": res.reasoning
-            }
-        except Exception as e:
-            logger.error(f"NVIDIA Combat Error (Attempt {attempt + 1}): {e}")
-            
-    logger.error("ALL NVIDIA COMBAT KEYS FAILED OR NONE CONFIGURED.")
-    return {"reply": "", "reaction": None, "reasoning": "Combat engine failure."}
+            from app.teleprompter.logger import OptimizationLogger
+            OptimizationLogger().log_inference(state["history"], state["graph"], state["user"], state["message"], state["location"])
+        except Exception:
+            pass
+        
+        reply_val = res.reply if str(res.reply).lower() not in ["none", "null", ""] else ""
+        reaction_val = res.reaction if str(res.reaction).lower() not in ["none", "null", ""] else None
+        
+        if reply_val:
+            reply_val = sanitize_think_tags(reply_val)
+        
+        return {
+            "reply": reply_val,
+            "reaction": reaction_val,
+            "reasoning": res.reasoning
+        }
+    except Exception as e:
+        logger.error(f"NVIDIA Combat Error: {e}")
+        return {"reply": "", "reaction": None, "reasoning": "Combat engine failure."}
 
 def route_engagement(state: CombatState):
     if state["should_engage"]:
@@ -315,9 +281,6 @@ class VRAGEngine(BaseEngine):
         if tagged_profiles:
             graph_str += "\n\n--- TAGGED BYSTANDER DOSSIERS ---\n" + "\n\n".join(tagged_profiles)
         
-        # Build descriptive location string (matching legacy vRAG)
-        location_str = "Private Direct Message" if is_private else f"Server: {payload.group_name} | Channel: #{payload.channel}"
-        
         initial_state = {
             "history": history_str,
             "graph": graph_str,
@@ -332,7 +295,6 @@ class VRAGEngine(BaseEngine):
             "reasoning": "Triage bypassed combat engine. (Silence)"
         }
         
-        # Invoke LangGraph in a separate thread so DSPy doesn't block FastAPI's async event loop
         final_state = await asyncio.to_thread(compiled_vrag_agent.invoke, initial_state)
         
         return EngineResponse(

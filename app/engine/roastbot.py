@@ -12,7 +12,6 @@ from app.core.utils import sanitize_think_tags, trim_history_by_tokens
 logger = logging.getLogger(__name__)
 
 async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRepository, max_targets: int = 3) -> list:
-    """Fetch global memory profiles for users tagged in the message."""
     profiles = []
     for u in tagged_users[:max_targets]:
         uid = u.id
@@ -26,8 +25,6 @@ async def _fetch_tagged_profiles(tagged_users: list, global_repo: GlobalMemoryRe
         else:
             profiles.append(f'<bystander username="{username}" id="{uid}">\nNo intelligence gathered yet. Default to standard mockery.\n</bystander>')
     return profiles
-
-
 
 
 class RoastbotEngine(BaseEngine):
@@ -58,10 +55,8 @@ class RoastbotEngine(BaseEngine):
         user_key = f"{payload.group_name}:{payload.username}"
         is_private = (payload.group_name == "private_chat")
         
-        # Clean the incoming message of Discord snowflakes
         clean_message = payload.message
         
-        # 1. Triage / Engagement Check (Legacy Hardcoded Logic)
         will_reply = is_private or payload.force_reply or ("@an1" in clean_message.lower())
         if not will_reply:
             return EngineResponse(
@@ -70,7 +65,6 @@ class RoastbotEngine(BaseEngine):
                 engine_used="triage_silence"
             )
             
-        # 2. Context Assembly — Build structured messages list (matching legacy an1-roastbot)
         user_history_docs = await asyncio.to_thread(self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES)
         user_history_docs = trim_history_by_tokens(user_history_docs, settings.MAX_HISTORY_TOKENS)
         
@@ -109,7 +103,6 @@ class RoastbotEngine(BaseEngine):
             if group_summary:
                 llm_feed.append({"role": "system", "content": f"<group_dynamic_summary>\n{group_summary.strip()}\n</group_dynamic_summary>"})
             
-            # Tagged User Profiles (Gap 1 fix)
             tagged_profiles = await _fetch_tagged_profiles(payload.tagged_users, self.global_repo)
             if tagged_profiles:
                 joined_profiles = "\n\n".join(tagged_profiles)
@@ -124,14 +117,12 @@ class RoastbotEngine(BaseEngine):
                 )
             })
         
-        # 3. Execution via LLM Pool — Structured chat-completion call
-        max_retries = len(nvidia_combat_pool.models) if nvidia_combat_pool.models else 1
+        max_retries = 3
         final_reply = ""
         
         for attempt in range(max_retries):
             try:
                 current_lm = nvidia_combat_pool.get_next()
-                # Run the synchronous DSPy LLM call in a background thread with structured messages
                 res = await asyncio.to_thread(current_lm, messages=llm_feed) 
                 
                 if isinstance(res, list) and len(res) > 0:
@@ -139,15 +130,13 @@ class RoastbotEngine(BaseEngine):
                 else:
                     final_reply = str(res)
                     
-                # Comprehensive think-tag sanitization (Gap 5 fix)
                 final_reply = sanitize_think_tags(final_reply)
-                    
                 break
             except Exception as e:
                 logger.error(f"[{self.engine_name()}] Generation failed on attempt {attempt+1}: {e}")
         
         return EngineResponse(
             reply=final_reply if final_reply else None,
-            reaction=None, # Legacy engine does not support reactions
+            reaction=None,
             engine_used=self.engine_name()
         )
