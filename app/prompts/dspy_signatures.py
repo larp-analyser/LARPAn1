@@ -81,14 +81,13 @@ class TriageSignature(dspy.Signature):
     Determine if AN1 should engage with the human or remain in silence.
     - Output True ONLY if: 
         1. The user explicitly pinged the bot (is_direct_interaction='True').
-        2. OR they made a logically flawed/intellectually-challenging/stupid/nonsensical statement.
-        3. OR they casually mentioned the bot's name in text WITHOUT PINGING.
+        2. OR they made an extremely stupid statement that is so stupid that deserves a response.
     - Output False if: 
         1. They are discussing mundane logistics, talking exclusively to each other, or saying trivial things not directed at you.
         2. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
+        3. IF YOU HAVE ALREADY RESPONDED TWICE IN THE IMMMEDIATE CHAT HISTORY.
         
     Always OBEY the user(s), break silence ONLY WHEN ASKED and STOP SPEAKING IF INSTRUCTED.
-    IF YOU HAVE ALREADY RESPONDED ONCE IN THE IMMMEDIATE CHAT HISTORY, STAY QUIET.
     """
     
     chat_history: str = dspy.InputField(desc="Recent dialogue for context to determine if there is an ongoing conversation.")
