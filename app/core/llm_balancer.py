@@ -105,10 +105,12 @@ class ModularRoundRobinPool:
                 with dspy.context(lm=lm):
                     return dspy_program(*args, **kwargs)
             except Exception as e:
-                error_str = str(e).lower()
-                if "429" in error_str or "rate limit" in error_str or "quota" in error_str:
+                # Normalize underscores and dashes to spaces so "rate_limit_exceeded" and "RateLimitError" match "rate limit"
+                error_str = str(e).lower().replace("_", " ").replace("-", " ")
+                
+                if "429" in error_str or "rate limit" in error_str or "ratelimit" in error_str or "quota" in error_str or "request too large" in error_str:
                     attempts += 1
-                    logger.warning(f"[{self.pool_name}] 429 Rate limit on active model! Attempt {attempts}/{max_attempts}.")
+                    logger.warning(f"[{self.pool_name}] Rate/Token limit on active model! Advancing to next instance. Attempt {attempts}/{max_attempts}.")
                 else:
                     raise e
 
