@@ -89,10 +89,6 @@ class ModularRoundRobinPool:
             return current_lm
 
     def execute_with_retry(self, dspy_program, *args, max_retries=None, **kwargs):
-        """
-        Executes a DSPy task. If a rate limit (429) occurs, it advances to the next model/key in the active queue.
-        The fallback flag remains strictly programmer-driven and is never toggled automatically.
-        """
         with self.lock:
             active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
 
@@ -105,16 +101,22 @@ class ModularRoundRobinPool:
                 with dspy.context(lm=lm):
                     return dspy_program(*args, **kwargs)
             except Exception as e:
-                # Normalize underscores and dashes to spaces so "rate_limit_exceeded" and "RateLimitError" match "rate limit"
+                # Normalize string for robust matching
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
-                if "429" in error_str or "rate limit" in error_str or "ratelimit" in error_str or "quota" in error_str or "request too large" in error_str:
+                retry_triggers = [
+                    "429", "rate limit", "ratelimit", "quota", 
+                    "request too large", "empty or null", "jsonadapter", 
+                    "failed to parse", "none", "500", "502", "503"
+                ]
+                
+                if any(trigger in error_str for trigger in retry_triggers):
                     attempts += 1
-                    logger.warning(f"[{self.pool_name}] Rate/Token limit on active model! Advancing to next instance. Attempt {attempts}/{max_attempts}.")
+                    logger.warning(f"[{self.pool_name}] Rate limit or transient error on active model! Advancing instance ({attempts}/{max_attempts}).")
                 else:
                     raise e
 
-        raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) due to rate limits across active pool.")
+        raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
 
 
 # =====================================================================

@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 class CombatState(TypedDict):
     history: str
+    combat_history: str
     graph: str
     user: str
     message: str
@@ -173,18 +174,22 @@ def triage_node(state: CombatState):
             location=state["location"],
             is_direct_interaction=str(state["is_direct"])
         )
-        engage = res.decision.should_engage
+        engage = res.decision.should_engage if (res and hasattr(res, "decision") and res.decision) else False
         logger.info(f"Triage processed | Engage: {engage}")
         return {"should_engage": engage}
     except Exception as e:
         logger.error(f"Triage Execution Error: {e}")
-        return {"should_engage": False}
+        fallback_engage = state.get("is_direct", False)
+        logger.info(f"Triage fallback engaged | Fallback Engage: {fallback_engage}")
+        return {"should_engage": fallback_engage}
 
 def combat_node(state: CombatState):
     try:
+        full_history = state.get("combat_history", state["history"])
+        
         res = nvidia_combat_pool.execute_with_retry(
             combat_engine,
-            history=state["history"],
+            history=full_history,
             graph=state["graph"],
             user=state["user"],
             message=state["message"],
@@ -194,7 +199,7 @@ def combat_node(state: CombatState):
         # Wire to detached Teleprompter logs
         try:
             from app.teleprompter.logger import OptimizationLogger
-            OptimizationLogger().log_inference(state["history"], state["graph"], state["user"], state["message"], state["location"])
+            OptimizationLogger().log_inference(full_history, state["graph"], state["user"], state["message"], state["location"])
         except Exception:
             pass
         
@@ -257,8 +262,17 @@ class VRAGEngine(BaseEngine):
                 profiles.append(f'<bystander username="{username}" id="{uid}">\nNo intelligence gathered yet.\n</bystander>')
         return profiles
         
-    async def _format_history(self, payload: IncomingPayload) -> str:
+    async def _format_history(self, payload: IncomingPayload, for_triage: bool = False) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
+        
+        if for_triage:
+            history = await asyncio.to_thread(
+                self.group_repo.get_recent_history if payload.group_name != "private_chat" else self.chat_repo.get_recent_history,
+                payload.group_name if payload.group_name != "private_chat" else user_key,
+                limit=10
+            )
+            return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
+
         if payload.group_name == "private_chat":
             history = await asyncio.to_thread(
                 self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES
@@ -279,7 +293,9 @@ class VRAGEngine(BaseEngine):
         
     async def process(self, payload: IncomingPayload) -> EngineResponse:
         is_private = (payload.group_name == "private_chat")
-        history_str = await self._format_history(payload)
+        
+        triage_history_str = await self._format_history(payload, for_triage=True)
+        combat_history_str = await self._format_history(payload, for_triage=False)
         graph_str = await self._format_graph(payload)
         
         tagged_profiles = await self._fetch_tagged_profiles(payload.tagged_users)
@@ -287,7 +303,8 @@ class VRAGEngine(BaseEngine):
             graph_str += "\n\n--- TAGGED BYSTANDER DOSSIERS ---\n" + "\n\n".join(tagged_profiles)
         
         initial_state = {
-            "history": history_str,
+            "history": triage_history_str,
+            "combat_history": combat_history_str,
             "graph": graph_str,
             "user": payload.username,
             "message": payload.message,
