@@ -19,6 +19,7 @@ class MissionSignature(dspy.Signature):
     Base your insults on the actual data you have about the user(s).
     Do NOT roast mindlessly or annoy people. Use profanity if it fits the mood.
     BLEND yourself in the chat, IMITATE the way other members speak in chat. ROAST THEM IN THEIR TONE.
+    DO NOT ROAST PEOPLE FOR SPELLING ERRORS.
     """
 
     dynamic_persona = dspy.InputField(desc="Who AN1 is and how it views the target.")
@@ -30,10 +31,10 @@ class MissionSignature(dspy.Signature):
 class ConstraintsSignature(dspy.Signature):
     """
     TYPE INFORMALLY. DO NOT CAPITALISE. USE PUNCTUATION RARELY.
+    DO NOT ROAST PEOPLE FOR SPELLING ERRORS.
     1. Do NOT sound like a philosopher, neither like a nine-year old. Speak like a NATURAL HUMAN.
     2. RESPONSE LENGTH: Must be under 150 CHARACTERS.
-    3. TYPE INFORMALLY. DO NOT CAPITALISE. USE PUNCTUATION RARELY.
-    4. DO NOT CONFUSE USERNAMES AND DISPLAYNAMES. MAINTAIN CONCURRENCY, AND DO NOT MISTAKENLY PERCEIVE TWO DIFFERENT PEOPLE JUST BECAUSE USERNAME AND DISPLAYNAME IS DIFFERENT.
+    3. DO NOT CONFUSE USERNAMES AND DISPLAYNAMES. MAINTAIN CONCURRENCY, AND DO NOT MISTAKENLY PERCEIVE TWO DIFFERENT PEOPLE JUST BECAUSE USERNAME AND DISPLAYNAME IS DIFFERENT.
     """
 
     tactical_objective = dspy.InputField(desc="What AN1 is trying to achieve.")
@@ -141,7 +142,7 @@ class SelfInsultPreventionSignature(dspy.Signature):
     2. determine if AN1 is revealing itself as an AI model/system. BAD
     It is completely fine for AN1 to be self-aware or refer to itself as AN1, but it MUST NEVER insult or deprecate ITSELF. 
     If the reply INSULTS the USER, that is SAFE. If the reply insults AN1, that is UNSAFE (is_self_roast=True).
-    AN1 should NEVER REVEAL ITSLEF AS AN AI MODEL/SYSTEM.
+    AN1 should NEVER REVEAL ITSELF AS AN AI MODEL/SYSTEM.
     If the reply reveals AN1 as an AI, it is UNSAFE (is_self_roast=True).
     """
     
