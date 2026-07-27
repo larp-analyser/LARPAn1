@@ -1,5 +1,5 @@
 import dspy
-from dspy.teleprompt import BootstrapFewShot
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch
 import logging
 import re
 import os
@@ -8,7 +8,6 @@ import tempfile
 
 from app.engine.vrag import AN1CombatEngine
 from app.prompts.dspy_signatures import SelfInsultPreventionSignature
-from app.teleprompter.logger import OptimizationLogger
 from app.teleprompter.logger import OptimizationLogger
 from app.db.mongo import MongoDB
 from app.core.llm_balancer import nvidia_combat_pool
@@ -23,11 +22,11 @@ def run_teleprompter_task():
         return
         
     try:
-        logger.info("[TELEPROMPTER] Starting DSPy Optimization Side-Hustle...")
+        logger.info("[TELEPROMPTER] Starting DSPy Deep Optimization Side-Hustle...")
         
-        # 1. Fetch historical raw inputs
+        # 1. Fetch massive historical dataset into RAM
         log_repo = OptimizationLogger()
-        raw_logs = log_repo.get_recent_examples(limit=50)
+        raw_logs = log_repo.get_recent_examples(limit=2000)
         
         if len(raw_logs) < 10:
             logger.info("[TELEPROMPTER] Not enough data to optimize. Aborting.")
@@ -60,14 +59,16 @@ def run_teleprompter_task():
                 
             return 1.0
             
-        # 4. Setup Teleprompter
+        # 4. Setup Advanced Random Search Teleprompter
         current_lm = nvidia_combat_pool.get_next()
         
         with dspy.context(lm=current_lm):
-            teleprompter = BootstrapFewShot(
+            teleprompter = BootstrapFewShotWithRandomSearch(
                 metric=combat_metric,
-                max_bootstrapped_demos=8,
-                max_labeled_demos=8  # Kept low to preserve LLM creativity and prevent overfitting
+                max_bootstrapped_demos=6,
+                max_labeled_demos=8,
+                num_candidate_programs=10, 
+                num_threads=4 
             )
             
             # 5. Compile

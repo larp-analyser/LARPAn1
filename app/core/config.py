@@ -20,12 +20,12 @@ class Settings(BaseSettings):
 
     # Application Tuning
     CRON_SECRET: str = "default_dev_secret"
-    MEMORY_TTL: int = 500
+    MEMORY_TTL: int = 86400  # 24 Hours (utilizing 104GB RAM)
     GROUP_HISTORY_MAX_MESSAGES: int = 50000
-    GROUP_HISTORY_SLICE: int = 80
-    MAX_HISTORY_MESSAGES: int = 30
-    MAX_HISTORY_TOKENS: int = 400
-    GROUP_HISTORY_TOKEN_LIMIT: int = 2000
+    GROUP_HISTORY_SLICE: int = 200  # Feed up to 200 messages at once
+    MAX_HISTORY_MESSAGES: int = 150 # User-specific history tracking
+    MAX_HISTORY_TOKENS: int = 4000  # Massive personal context
+    GROUP_HISTORY_TOKEN_LIMIT: int = 16000  # Massive group context
     EVOLVE_EVERY_N_MESSAGES: int = 50
     GROUP_SUMMARY_EVERY_N: int = 300
 

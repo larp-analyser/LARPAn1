@@ -19,6 +19,6 @@ class OptimizationLogger:
             "timestamp": datetime.now(timezone.utc)
         })
         
-    def get_recent_examples(self, limit: int = 100) -> list:
+    def get_recent_examples(self, limit: int = 2000) -> list:
         cursor = self.collection.find().sort("timestamp", -1).limit(limit)
         return list(cursor)

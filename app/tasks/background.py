@@ -57,7 +57,6 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
     )
     
     try:
-        # FIX: Wrap the synchronous retry execution in a thread to prevent freezing FastAPI
         res = await asyncio.to_thread(
             background_pool.execute_with_retry,
             extractor,
@@ -94,7 +93,12 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             if new_ent.id in existing_entities_dict:
                 existing_attrs = existing_entities_dict[new_ent.id].get("attributes", "")
                 if new_ent.attributes and new_ent.attributes not in existing_attrs:
-                    existing_entities_dict[new_ent.id]["attributes"] = f"{existing_attrs} | {new_ent.attributes}".strip(" |")
+                    # Break apart, deduplicate, and keep only the latest 5 traits
+                    combined = [a.strip() for a in existing_attrs.split("|") if a.strip()]
+                    if new_ent.attributes not in combined:
+                        combined.append(new_ent.attributes)
+                    
+                    existing_entities_dict[new_ent.id]["attributes"] = " | ".join(combined[-5:])
             else:
                 existing_entities_dict[new_ent.id] = {
                     "id": new_ent.id,
@@ -104,20 +108,31 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         
         merged_entities = list(existing_entities_dict.values())
         existing_rels = existing_graph.get("relationships", [])
-        seen_rels = {(r["source"], r["relation"], r["target"]): i for i, r in enumerate(existing_rels)}
+        
+        # Group relationships strictly by source and target
+        seen_rels = {(r["source"], r["target"]): i for i, r in enumerate(existing_rels)}
         
         for rel in new_graph_data.relationships:
-            rel_tuple = (rel.source, rel.relation, rel.target)
+            rel_tuple = (rel.source, rel.target)
             if rel_tuple in seen_rels:
                 idx = seen_rels[rel_tuple]
-                existing_rels[idx]["intensity"] = float(rel.intensity)
+                # Calculate a moving average for intensity to track historical beef
+                existing_rels[idx]["intensity"] = round((existing_rels[idx]["intensity"] + float(rel.intensity)) / 2, 2)
+                
+                # Append the new relationship description if it is distinct
+                if rel.relation not in existing_rels[idx]["relation"]:
+                    existing_rels[idx]["relation"] = f"{existing_rels[idx]['relation']} | {rel.relation}"
+                    
+                # Stamp exactly when this edge was last reinforced
+                existing_rels[idx]["last_seen"] = datetime.now(timezone.utc).isoformat()
             else:
                 seen_rels[rel_tuple] = len(existing_rels)
                 existing_rels.append({
                     "source": rel.source, 
                     "relation": rel.relation, 
                     "target": rel.target,
-                    "intensity": float(rel.intensity)
+                    "intensity": float(rel.intensity),
+                    "last_seen": datetime.now(timezone.utc).isoformat()
                 })
                 
         updated_graph = {
@@ -201,7 +216,6 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
     for attempt in range(max_attempts):
         try:
             current_lm = background_pool.get_next()
-            # Raw LLM calls natively support async threading exactly like this
             res = await asyncio.to_thread(current_lm, messages=llm_feed)
             
             if isinstance(res, list) and len(res) > 0:
