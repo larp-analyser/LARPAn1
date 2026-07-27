@@ -146,21 +146,21 @@ triage_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
-    temperature=0.0,
+    temperature=0.5,
     max_tokens=2048
 )
 triage_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
-    temperature=0.0,
+    temperature=0.5,
     max_tokens=2048
 )
 triage_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
-    temperature=0.0,
+    temperature=0.5,
     max_tokens=2048
 )
 
@@ -171,7 +171,7 @@ triage_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=0.7,
+    temperature=0.5,
     max_tokens=2048
 )
 
