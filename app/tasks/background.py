@@ -110,7 +110,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         existing_rels = existing_graph.get("relationships", [])
         
         # Group relationships strictly by source and target
-        seen_rels = {(r["source"], r["target"]): i for i, r in enumerate(existing_rels)}
+        seen_rels = {(r.get("source"), r.get("target")): i for i, r in enumerate(existing_rels) if r.get("source") and r.get("target")}
         
         for rel in new_graph_data.relationships:
             rel_tuple = (rel.source, rel.target)

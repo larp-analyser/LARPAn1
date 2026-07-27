@@ -19,8 +19,8 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
         group_graph = {"entities": [], "relationships": [], "last_updated": now.isoformat()}
         
     # Generate a unique cache signature
-    user_update_time = user_graph.get("last_updated", now.isoformat())
-    group_update_time = group_graph.get("last_updated", now.isoformat())
+    user_update_time = user_graph.get("last_updated") or now.isoformat()
+    group_update_time = group_graph.get("last_updated") or now.isoformat()
     cache_key = f"{username}_{user_update_time}_{group_update_time}"
     
     if cache_key in _digraph_cache:

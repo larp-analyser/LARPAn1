@@ -5,6 +5,7 @@ import re
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
 
+from app.core.config import settings
 from app.engine.base import BaseEngine
 from app.api.models import IncomingPayload, EngineResponse
 from app.prompts.dspy_signatures import (
@@ -257,13 +258,17 @@ class VRAGEngine(BaseEngine):
         return profiles
         
     async def _format_history(self, payload: IncomingPayload) -> str:
-        user_key = f"{payload.group_name}:{payload.username}"
-        if payload.group_name == "private_chat":
-            history = await asyncio.to_thread(self.chat_repo.get_recent_history, user_key, limit=16)
-        else:
-            history = await asyncio.to_thread(self.group_repo.get_recent_history, payload.group_name, limit=16)
-            
-        return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
+    user_key = f"{payload.group_name}:{payload.username}"
+    if payload.group_name == "private_chat":
+        history = await asyncio.to_thread(
+            self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES
+        )
+    else:
+        history = await asyncio.to_thread(
+            self.group_repo.get_recent_history, payload.group_name, limit=settings.GROUP_HISTORY_SLICE
+        )
+        
+    return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
         
     async def _format_graph(self, payload: IncomingPayload) -> str:
         user_key = f"{payload.group_name}:{payload.username}"
