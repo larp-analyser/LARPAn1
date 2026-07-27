@@ -59,7 +59,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
                 base_weight = float(rel.get("intensity", 5.0))
                 
                 # Calculate decay specifically for this isolated edge using its last_seen timestamp
-                edge_last_seen = rel.get("last_seen", data.get("last_updated", now.isoformat()))
+                edge_last_seen = rel.get("last_seen") or data.get("last_updated") or now.isoformat()
                 try:
                     edge_age_days = (now - datetime.fromisoformat(edge_last_seen)).days
                 except:

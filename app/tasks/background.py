@@ -41,7 +41,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
     if not existing_entities_str:
         existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
 
-    existing_rels_str = ", ".join([f"{r['source']} {r['relation']} {r['target']} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])])
+    existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", []) if r.get('source') and r.get('target')])
     
     if is_user:
         username = entity_key.split(":", 1)[1] if ":" in entity_key else entity_key
