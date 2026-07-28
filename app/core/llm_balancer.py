@@ -128,7 +128,7 @@ nvidia_combat_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=False, # Loaded directly into primary queue for roasting
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=1.0,
+    temperature=1.3,
     top_p=1.0,
     max_tokens=16384
 )
@@ -143,21 +143,21 @@ triage_pool.add_provider(
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
     temperature=0.5,
-    max_tokens=2048
+    max_tokens=1024
 )
 triage_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
     temperature=0.5,
-    max_tokens=2048
+    max_tokens=1024
 )
 triage_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
     temperature=0.5,
-    max_tokens=2048
+    max_tokens=1024
 )
 
 # Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
@@ -168,7 +168,7 @@ triage_pool.add_provider(
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
     temperature=0.5,
-    max_tokens=2048
+    max_tokens=1024
 )
 
 
@@ -180,22 +180,22 @@ background_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
-    temperature=0.2,
-    max_tokens=4096
+    temperature=0.3,
+    max_tokens=1024
 )
 background_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
-    temperature=0.2,
-    max_tokens=4096
+    temperature=0.3,
+    max_tokens=1024
 )
 background_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
-    temperature=0.2,
-    max_tokens=4096
+    temperature=0.3,
+    max_tokens=1024
 )
 
 # Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
@@ -205,6 +205,6 @@ background_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=0.2,
-    max_tokens=4096
+    temperature=0.3,
+    max_tokens=1024
 )
