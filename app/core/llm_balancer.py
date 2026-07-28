@@ -107,7 +107,8 @@ class ModularRoundRobinPool:
                 retry_triggers = [
                     "429", "rate limit", "ratelimit", "quota", 
                     "request too large", "empty or null", "jsonadapter", 
-                    "failed to parse", "none", "500", "502", "503"
+                    "failed to parse", "none", "500", "502", "503",
+                    "json validate failed", "invalid request error"
                 ]
                 
                 if any(trigger in error_str for trigger in retry_triggers):
@@ -143,21 +144,21 @@ triage_pool.add_provider(
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
     temperature=0.5,
-    max_tokens=1024
+    max_tokens=2048
 )
 triage_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
     temperature=0.5,
-    max_tokens=1024
+    max_tokens=2048
 )
 triage_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
     temperature=0.5,
-    max_tokens=1024
+    max_tokens=2048
 )
 
 # Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
@@ -168,7 +169,7 @@ triage_pool.add_provider(
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
     temperature=0.5,
-    max_tokens=1024
+    max_tokens=2048
 )
 
 
@@ -180,22 +181,22 @@ background_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
-    temperature=0.3,
-    max_tokens=1024
+    temperature=0.5,
+    max_tokens=2048
 )
 background_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
-    temperature=0.3,
-    max_tokens=1024
+    temperature=0.5,
+    max_tokens=2048
 )
 background_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
-    temperature=0.3,
-    max_tokens=1024
+    temperature=0.5,
+    max_tokens=2048
 )
 
 # Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
@@ -205,6 +206,6 @@ background_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=0.3,
-    max_tokens=1024
+    temperature=0.5,
+    max_tokens=2048
 )
