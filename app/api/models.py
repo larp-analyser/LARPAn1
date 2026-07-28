@@ -12,13 +12,13 @@ class IncomingPayload(BaseModel):
     username: str = Field(..., description="Username of the sender")
     display_name: str = Field(..., description="Display name of the sender")
     group_name: str = Field(..., description="Server/group name, or 'discord_dm'")
-    channel: str = Field(..., description="Channel name")
+    channel: Optional[str] = Field("dm", description="Channel name")  # Changed from str to Optional[str]
     tagged_users: List[TaggedUser] = Field(default_factory=list, description="Array of tagged users")
     platform: Literal["discord", "whatsapp", "minecraft", "twitter"] = Field(..., description="Origin platform")
     force_reply: bool = Field(default=False, description="Bypass mention checks and force engagement")
     mode: Literal["auto", "legacy", "vrag"] = Field(
         default="auto", 
-        description="Select the underlying engine architecture. 'auto' defaults to vRAG with legacy fallback."
+        description="Select the underlying engine architecture."
     )
 
 class EngineResponse(BaseModel):

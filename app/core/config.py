@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Application Tuning
     CRON_SECRET: str = "default_dev_secret"
-    MEMORY_TTL: int = 86400  # 24 Hours (utilizing 104GB RAM)
+    MEMORY_TTL: int = 3600  # 24 Hours (utilizing 104GB RAM)
     GROUP_HISTORY_MAX_MESSAGES: int = 50000
     GROUP_HISTORY_SLICE: int = 80  # Feed up to 200 messages at once
     MAX_HISTORY_MESSAGES: int = 80 # User-specific history tracking
