@@ -129,7 +129,7 @@ nvidia_combat_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=False, # Loaded directly into primary queue for roasting
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=1.3,
+    temperature=1.0,
     top_p=1.0,
     max_tokens=16384
 )
