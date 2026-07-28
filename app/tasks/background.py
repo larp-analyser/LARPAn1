@@ -53,7 +53,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
     new_graph_data = None
     extraction_guidance = (
         "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. YOU ARE AN1. (SELF-IDENTITY) "
-        "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users."
+        "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users. "
+        "LIMIT: Extract a MAXIMUM of 5 key entities and 5 key relationships. Do not extract trivial concepts or filler text. Stop immediately once formatted."
     )
     
     try:
@@ -398,6 +399,6 @@ async def hourly_sweep_task():
         except Exception as e:
             logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
             
-        await asyncio.sleep(2)
+        await asyncio.sleep(15)
         
     logger.info("[SWEEP] Completed hourly evolution sweep.")

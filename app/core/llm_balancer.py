@@ -119,10 +119,6 @@ class ModularRoundRobinPool:
         raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
 
 
-# =====================================================================
-# POOL INITIALIZATIONS
-# =====================================================================
-
 # 1. COMBAT POOL (Roasting Engine)
 # Loaded directly into Primary queue -> Always uses NVIDIA models strictly.
 nvidia_combat_pool = ModularRoundRobinPool(pool_name="COMBAT_NVIDIA")
@@ -184,21 +180,21 @@ background_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
     provider_prefix="gemini/",
-    temperature=0.7,
+    temperature=0.2,
     max_tokens=4096
 )
 background_pool.add_provider(
     api_keys=settings.groq_keys_list,
     model_pool=settings.GROQ_POOL,
     provider_prefix="groq/",
-    temperature=0.7,
+    temperature=0.2,
     max_tokens=4096
 )
 background_pool.add_provider(
     api_keys=settings.openai_keys_list,
     model_pool=settings.OPENAI_POOL,
     provider_prefix="openai/",
-    temperature=0.7,
+    temperature=0.2,
     max_tokens=4096
 )
 
@@ -209,6 +205,6 @@ background_pool.add_provider(
     provider_prefix="openai/",
     is_nvidia=True,
     api_base="https://integrate.api.nvidia.com/v1",
-    temperature=0.7,
+    temperature=0.2,
     max_tokens=4096
 )
