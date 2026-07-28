@@ -399,6 +399,6 @@ async def hourly_sweep_task():
         except Exception as e:
             logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
             
-        await asyncio.sleep(15)
+        await asyncio.sleep(5)
         
     logger.info("[SWEEP] Completed hourly evolution sweep.")
