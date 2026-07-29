@@ -89,7 +89,7 @@ class AN1CombatEngine(dspy.Module):
         safety_trace = ""
         current_constraints = con_res.operational_constraints
         
-        for attempt in range(3):
+        for attempt in range(11):
             if not dec_res.decision.reply:
                 break
                 
@@ -97,18 +97,40 @@ class AN1CombatEngine(dspy.Module):
             needs_retry = False
             
             # 1. Verbosity Check
-            if len(reply_text) > 150:
-                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 150 characters. Cut the fat."
+            if len(reply_text) > 50:
+                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 50 characters. Cut the fat."
                 logger.warning(f"Verbosity detected ({len(reply_text)} chars). Penalty applied.")
                 safety_trace += "| Verbosity Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
                 
-            # 2. French Filler Check
-            elif re.search(r'\b(oh|ah|alas|ouais|voilà)\b', reply_text, re.IGNORECASE):
-                penalty = "CRITICAL PENALTY: Remove all filler words (Oh, Ah, Alas, etc.). Speak directly and brutally."
-                logger.warning("French Filler detected. Penalty applied.")
-                safety_trace += "| Filler Penalty "
+            # 2. Max-Expanded Persona & Structural Filter
+            # Massively expanded targets for try-hard slang, internet trends, corporate/therapy padding, and weak conversational crutches.
+            
+            internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
+            brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|slay|periodt)"
+            corporate_and_therapy = r"(bandwidth|unpack|gaslight|gaslighting|problematic|synergy|mindset|journey|navigate|align|toxic|narcissist|narcissistic|trigger|triggered|trauma|boundaries|validate|validation|projecting|projection|leverage|pivot|holistic|paradigm|ideate|empower)"
+            vocal_pauses = r"(uh|um|er|hmm|huh|oof|yikes|pfft|psh|ugh|welp|meh|haha|hehe|xd|kek|aww|oop|tsk|geez|jeez|dang|heck|yay|whoops)"
+            weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|chief|boss|kiddo|bucko|pal|chum|champ|sport|amigo|fella|fellas|peeps|yall)"
+            adverbial_crutches = r"(literally|basically|essentially|actually|honestly|frankly|seriously|obviously|genuinely|totally|absolutely|utterly|practically|technically|ironically)"
+            hedge_words = r"(kinda|sorta|maybe|perhaps|somewhat|probably|apparently|seemingly|supposedly|theoretically|hypothetically)"
+            
+            filler_pattern = re.compile(
+                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words})\b", 
+                re.IGNORECASE
+            )
+            
+            if filler_pattern.search(reply_text):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for using internet slang, therapy-speak, or nervous filler. "
+                    "You must behave like a normal sane person who is educated in what to speak when to speak and how to speak properly."
+                    "1. NO INTERNET SLANG OR TRENDS: Do not use brainrot, fleeting internet buzzwords, or memes. "
+                    "2. NO CORPORATE/THERAPY SPEAK: Speak naturally, without academic padding, armchair psychology, or HR buzzwords. "
+                    "3. NOT A STRICT DAD: Do not moralize, lecture, or sound like a disappointed father scolding a child. "
+                    "Speak with effortless, grounded clarity. Deliver the insult as a simple, devastating, and natural observation."
+                )
+                logger.warning("Max-Expanded Persona/Filler filter triggered. Penalty applied.")
+                safety_trace += "| Next-Level Persona Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
                 
@@ -125,11 +147,11 @@ class AN1CombatEngine(dspy.Module):
                     needs_retry = True
             
             if needs_retry:
-                if attempt == 2:
+                if attempt == 10:
                     logger.error("Cognitive Penalty Loop exhausted. Erasing non-compliant draft.")
                     dec_res.decision.reply = ""
                     dec_res.decision.reaction = None
-                    dec_res.reasoning = "Silenced after 3 failed cognitive compliance checks."
+                    dec_res.reasoning = "Silenced after 10 failed cognitive compliance checks."
                     break
                     
                 dec_res = self.decision_engine(
