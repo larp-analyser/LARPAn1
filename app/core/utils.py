@@ -2,12 +2,17 @@ import re
 from app.core.config import settings
 
 def normalize_bot_mentions(text: str) -> str:
-    """Replace only the bot's configured IDs with @AN1 so the LLM recognizes when it is addressed."""
+    """Replace configured IDs and handles with @AN1 so the LLM recognizes when it is addressed."""
     if not text:
         return ""
+        
+    # 1. Normalize Discord-style ID pings
     for d_id in [settings.DISCORD_ID, settings.DISCORD_ID_2]:
         if d_id:
             text = re.sub(r'<@!?' + re.escape(str(d_id)) + r'>', '@AN1', text)
+            
+    # 2. Normalize @larp.analyser, @larp_analyser, and @larpanalyser pings to @AN1
+    text = re.sub(r'@larp[\._]?analyser\b', '@AN1', text, flags=re.IGNORECASE)
             
     return text
 
