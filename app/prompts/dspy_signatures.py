@@ -87,11 +87,12 @@ class TriageSignature(dspy.Signature):
         2. OR they made a statement that CAN be FLIPPED ON THEM IN THE FORM OF A ROAST OR A RAGEBAIT.
         3. OR they said something EXTREMELY STUPID in the context of the chat.
     - OUTPUT False if: 
-        1. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you.
-        2. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
-        3. IF YOU HAVE ALREADY RESPONDED TWICE IN THE IMMMEDIATE CHAT HISTORY.
-        4. THE RESPONSE MAY CAUSE SELF EMBARRASMENT FOR AN1, like if the user TRIES to trap AN1 by saying "talk if gay", etcetera.
-        5. THE user PINGED @AN1 (or anyone else), but IT IS EMPTY (A GHOST PING).
+        1. IF YOU HAVE ALREADY REPLIED ONCE IN THE IMMEDIATE CONTEXT OF THE CHAT.
+        2. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you.
+        3. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
+        4. IF YOU HAVE ALREADY RESPONDED TWICE IN THE IMMMEDIATE CHAT HISTORY.
+        5. THE RESPONSE MAY CAUSE SELF EMBARRASMENT FOR AN1, like if the user TRIES to trap AN1 by saying "talk if gay", etcetera.
+        6. THE user PINGED @AN1 (or anyone else), but IT IS EMPTY (A GHOST PING).
         
     Always OBEY the user(s), break silence ONLY WHEN ASKED and STOP SPEAKING IF INSTRUCTED.
     """
