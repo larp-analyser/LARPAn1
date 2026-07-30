@@ -107,27 +107,28 @@ class AN1CombatEngine(dspy.Module):
             # 2. Max-Expanded Persona & Structural Filter
             # Massively expanded targets for try-hard slang, internet trends, corporate/therapy padding, and weak conversational crutches.
             
-            internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
+            internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|ur|u|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
             brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|slay|periodt)"
             corporate_and_therapy = r"(bandwidth|unpack|gaslight|gaslighting|problematic|synergy|mindset|journey|navigate|align|toxic|narcissist|narcissistic|trigger|triggered|trauma|boundaries|validate|validation|projecting|projection|leverage|pivot|holistic|paradigm|ideate|empower)"
             vocal_pauses = r"(uh|um|er|hmm|huh|oof|yikes|pfft|psh|ugh|welp|meh|haha|hehe|xd|kek|aww|oop|tsk|geez|jeez|dang|heck|yay|whoops)"
             weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|chief|boss|kiddo|bucko|pal|chum|champ|sport|amigo|fella|fellas|peeps|yall)"
             adverbial_crutches = r"(literally|basically|essentially|actually|honestly|frankly|seriously|obviously|genuinely|totally|absolutely|utterly|practically|technically|ironically)"
             hedge_words = r"(kinda|sorta|maybe|perhaps|somewhat|probably|apparently|seemingly|supposedly|theoretically|hypothetically)"
+            observed_filler = r"(says|vibe|=|you|your|relevant|youre'|words|sentences)"
             
             filler_pattern = re.compile(
-                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words})\b", 
+                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words}|{observed_filler})\b", 
                 re.IGNORECASE
             )
             
             if filler_pattern.search(reply_text):
                 penalty = (
                     "CRITICAL PENALTY: Your response was rejected for using internet slang, therapy-speak, or nervous filler. "
-                    "You must behave like a normal sane person who is educated in WHAT to speak WHEN to speak and HOW to speak."
+                    "You must behave like a normal sane person who is educated in what to speak when to speak and how to speak."
                     "1. NO INTERNET SLANG OR TRENDS: Do not use brainrot, fleeting internet buzzwords, or memes. "
                     "2. NO CORPORATE/THERAPY SPEAK: Speak naturally, without academic padding, armchair psychology, or HR buzzwords. "
                     "3. NOT A STRICT DAD: Do not moralize, lecture, or sound like a disappointed father scolding a child. "
-                    "Speak with effortless, grounded clarity."
+                    "Insult with grounded clarity, in normal daily english."
                 )
                 logger.warning("Max-Expanded Persona/Filler filter triggered. Penalty applied.")
                 safety_trace += "| Next-Level Persona Penalty "
