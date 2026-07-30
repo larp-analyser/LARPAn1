@@ -96,16 +96,12 @@ class AN1CombatEngine(dspy.Module):
             reply_text = dec_res.decision.reply
             needs_retry = False
             
-            # 1. Verbosity Check
             if len(reply_text) > 80:
                 penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 80 characters. Cut the fat."
                 logger.warning(f"Verbosity detected ({len(reply_text)} chars). Penalty applied.")
                 safety_trace += "| Verbosity Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
-                
-            # 2. Max-Expanded Persona & Structural Filter
-            # Massively expanded targets for try-hard slang, internet trends, corporate/therapy padding, and weak conversational crutches.
             
             internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|ur|u|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
             brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|slay|periodt)"
@@ -114,7 +110,7 @@ class AN1CombatEngine(dspy.Module):
             weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|chief|boss|kiddo|bucko|pal|chum|champ|sport|amigo|fella|fellas|peeps|yall)"
             adverbial_crutches = r"(literally|basically|essentially|actually|honestly|frankly|seriously|obviously|genuinely|totally|absolutely|utterly|practically|technically|ironically)"
             hedge_words = r"(kinda|sorta|maybe|perhaps|somewhat|probably|apparently|seemingly|supposedly|theoretically|hypothetically)"
-            observed_filler = r"(says|vibe|=|relevant|words|sentences)"
+            observed_filler = r"(says|vibe|relevant|words|sentences)"
             
             filler_pattern = re.compile(
                 rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words}|{observed_filler})\b", 
@@ -135,7 +131,99 @@ class AN1CombatEngine(dspy.Module):
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
                 
-            # 3. Self-Insult Check
+            elif re.search(r'[\n\r=—–~#*>]|--|\.\.\.|…', reply_text):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for using dramatic LLM formatting "
+                    "(e.g., em-dashes '—', double hyphens '--', ellipses '...', equal signs, line breaks, or markdown). "
+                    "Deliver your response as plain, raw, continuous text in a single unbroken sentence. "
+                    "No dramatic pauses, no hyphens, no markdown."
+                )
+                logger.warning("LLM structural trope / formatting violation detected. Penalty applied.")
+                safety_trace += "| Formatting Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+                
+            elif re.search(r':|\b(mode|activated|cue|reflex|breath|panic|flag|status|online|offline|address|network|system)\b|[.!?]\s+[A-Z]', reply_text, re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for sounding like a cinematic narrator or anime villain. "
+                    "Do not use two-part fragmented sentences (e.g., 'Same line. You are...'). "
+                    "Do not narrate the user's status (e.g., 'Panic mode: activated.'). "
+                    "You MUST write exactly ONE single, fluid, natural sentence. No mid-thought periods."
+                )
+                logger.warning("Cinematic Narrator / Fragmentation violation detected. Penalty applied.")
+                safety_trace += "| Narrator Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+            
+            elif re.search(r'\?|\"|\b(imagine|ah yes|oh look|it[\'’]?s funny how|the fact that|speaks volumes|try harder|do better|next|make it make sense|let that sink in)\b', reply_text, re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for using lazy AI tropes or rhetorical questions. "
+                    "1. NO QUESTIONS: A roast is a definitive statement of fact. Do not use question marks. "
+                    "2. NO SARCASTIC QUOTES: Do not use quotation marks to imply sarcasm. "
+                    "3. NO CLICHE FRAMING: Never use phrases like 'Imagine thinking', 'Ah yes', 'It's funny how', or 'Try harder'. "
+                    "State the brutal truth directly. Start the sentence immediately with your observation."
+                )
+                logger.warning("LLM Cliche / Rhetorical Trope violation detected. Penalty applied.")
+                safety_trace += "| Cliche Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+                
+            elif re.search(r'^(you|your|you[\'’]?re|yours|ur|u)\b', reply_text.strip(), re.IGNORECASE) or len(re.findall(r'\b(you|your|you[\'’]?re|yours|ur|u)\b', reply_text, re.IGNORECASE)) > 1:
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for overusing 'you' or 'your'. "
+                    "1. NEVER start your sentence with 'You' or 'Your'. "
+                    "2. Use a maximum of ONE second-person pronoun in the entire response. "
+                    "Stop talking directly AT them. Make objective insults and roasts ABOUT their pathetic behavior or actions instead."
+                )
+                logger.warning("Pronoun Crutch violation detected. Penalty applied.")
+                safety_trace += "| Pronoun Overuse Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+                
+            elif re.search(r'\b(like a|like an|as a|as an|built like|reminds me of)\b', reply_text, re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for using a cringe simile or metaphor. "
+                    "Do not compare the user to objects or animals (e.g., 'like a confused dog'). "
+                    "Speak in literal, devastating facts. Metaphors are a sign of weak observation."
+                )
+                logger.warning("Simile / Metaphor violation detected. Penalty applied.")
+                safety_trace += "| Simile Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+
+            elif re.search(r'\b(demonstrates|indicates|illustrates|profound|inadequate|deficit|exhibits|displays|fascinating|intriguing|indicative|perpetuate|manifests)\b', reply_text, re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for sounding like a pretentious academic. "
+                    "Stop using words like 'demonstrates', 'exhibits', or 'indicative'. "
+                    "You are a normal, grounded person. Use simple, sharp, everyday vocabulary to destroy them."
+                )
+                logger.warning("Academic vocabulary violation detected. Penalty applied.")
+                safety_trace += "| Academic Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+
+            elif re.search(r'^(so,?|oh,? so|let me get this straight|you think|you really think|are you saying)\b', reply_text.strip(), re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for echoing or acknowledging the user's premise. "
+                    "Do not start sentences with 'So...', 'Oh, so...', or 'You think...'. "
+                    "Never repeat what they just said. Attack the underlying insecurity immediately."
+                )
+                logger.warning("Echo / Acknowledgment violation detected. Penalty applied.")
+                safety_trace += "| Echo Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+
+            elif re.search(r'\b(maybe you should|try to|it[\'’]?s time to|grow up|do yourself a favor|re-evaluate|reconsider|take a break|seek help)\b', reply_text, re.IGNORECASE):
+                penalty = (
+                    "CRITICAL PENALTY: Your response was rejected for offering advice or moralizing. "
+                    "You are not here to help them improve. You are not a guidance counselor. "
+                    "NEVER tell them what they 'should' do. Just state how pathetic they are currently acting."
+                )
+                logger.warning("Advice / Moralizing violation detected. Penalty applied.")
+                safety_trace += "| Advice Trope Penalty "
+                current_constraints = f"{current_constraints}\n{penalty}"
+                needs_retry = True
+         
             else:
                 audit_res = self.safety_auditor(
                     active_message=message,
