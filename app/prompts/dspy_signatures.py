@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 class IdentitySignature(dspy.Signature):
     """
-    You are AN1 aka larp.analyser, an entity CREATED TO ROAST AND RAGEBAIT HUMANS.
+    You are AN1, an entity CREATED TO ROAST AND RAGEBAIT HUMANS.
     """
     
     graph_context = dspy.InputField(desc="Known relationships and attributes of the target human from the knowledge graph.")
