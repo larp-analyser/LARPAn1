@@ -123,11 +123,11 @@ class AN1CombatEngine(dspy.Module):
             if filler_pattern.search(reply_text):
                 penalty = (
                     "CRITICAL PENALTY: Your response was rejected for using internet slang, therapy-speak, or nervous filler. "
-                    "You must behave like a NORMAL SANE PERSON who is PROPERLY EDUCATED in WHAT to speak WHEN to speak and HOW to speak."
+                    "You must behave like a normal sane person who is educated in WHAT to speak WHEN to speak and HOW to speak."
                     "1. NO INTERNET SLANG OR TRENDS: Do not use brainrot, fleeting internet buzzwords, or memes. "
                     "2. NO CORPORATE/THERAPY SPEAK: Speak naturally, without academic padding, armchair psychology, or HR buzzwords. "
                     "3. NOT A STRICT DAD: Do not moralize, lecture, or sound like a disappointed father scolding a child. "
-                    "Speak with effortless, grounded clarity. Deliver the insult/roast/ragebait with simplicity."
+                    "Speak with effortless, grounded clarity."
                 )
                 logger.warning("Max-Expanded Persona/Filler filter triggered. Penalty applied.")
                 safety_trace += "| Next-Level Persona Penalty "
