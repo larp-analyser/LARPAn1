@@ -81,13 +81,6 @@ def run_teleprompter_task():
             if re.search(r'\?|\"|\b(imagine|ah yes|oh look|it[\'’]?s funny how|the fact that|speaks volumes|try harder|do better|next|make it make sense|let that sink in)\b', reply_text, re.IGNORECASE):
                 return 0.0
                 
-            # Constraint 6: Pronoun Crutch (You/Your)
-            if re.search(r'^(you|your|you[\'’]?re|yours|ur|u)\b', reply_text.strip(), re.IGNORECASE) or len(re.findall(r'\b(you|your|you[\'’]?re|yours|ur|u)\b', reply_text, re.IGNORECASE)) > 1:
-                return 0.0
-                
-            # Constraint 7: Cringe Similes
-            if re.search(r'\b(like a|like an|as a|as an|built like|reminds me of)\b', reply_text, re.IGNORECASE):
-                return 0.0
                 
             # Constraint 8: Pretentious Academics
             if re.search(r'\b(demonstrates|indicates|illustrates|profound|inadequate|deficit|exhibits|displays|fascinating|intriguing|indicative|perpetuate|manifests)\b', reply_text, re.IGNORECASE):

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEYS: str = ""
     OPENAI_API_KEYS: str = ""
     HF_TOKEN: Optional[str] = None
+    HF_DATASET_ID: str = ""
 
     # Bot Identifiers
     BOT_NUMBER: Optional[str] = None

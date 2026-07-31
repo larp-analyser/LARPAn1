@@ -16,3 +16,4 @@ openai
 google-genai
 fastembed
 faiss-cpu
+huggingface_hub

@@ -4,9 +4,51 @@ from fastembed import TextEmbedding
 import threading
 import logging
 import hashlib
-from app.db.mongo import MongoDB
+import json
+import os
+
+from huggingface_hub import HfApi, hf_hub_download
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+class HFPersistence:
+    """Handles background upload/download of serialized FAISS files to Hugging Face Datasets."""
+    def __init__(self):
+        self.api = HfApi()
+        self.repo_id = settings.HF_DATASET_ID
+        self.token = settings.HF_TOKEN
+
+    def download_file(self, filename: str, dest_path: str) -> bool:
+        if not self.token or not self.repo_id:
+            return False
+        try:
+            downloaded_path = hf_hub_download(
+                repo_id=self.repo_id, 
+                filename=filename, 
+                repo_type="dataset", 
+                token=self.token
+            )
+            # Move the cached download to our working destination
+            os.system(f"cp {downloaded_path} {dest_path}")
+            return True
+        except Exception as e:
+            logger.info(f"[VECTOR] {filename} not found in HF Dataset or download failed: {e}")
+            return False
+
+    def upload_file(self, filename: str, src_path: str):
+        if not self.token or not self.repo_id:
+            return
+        try:
+            self.api.upload_file(
+                path_or_fileobj=src_path,
+                path_in_repo=filename,
+                repo_id=self.repo_id,
+                repo_type="dataset",
+                token=self.token
+            )
+        except Exception as e:
+            logger.error(f"[VECTOR] HF Dataset upload failed for {filename}: {e}")
 
 class VectorMemory:
     _instance = None
@@ -21,40 +63,40 @@ class VectorMemory:
 
     def _init_store(self):
         logger.info("[VECTOR] Initializing FastEmbed (BAAI/bge-large-en-v1.5)...")
-        # Load the 1.3GB ONNX model into RAM
         self.embedding_model = TextEmbedding(model_name="BAAI/bge-large-en-v1.5")
-        
-        # BGE-Large outputs 1024-dimensional vectors
         self.dimension = 1024 
-        self.index = faiss.IndexFlatIP(self.dimension) # Inner Product for Cosine Similarity
         
         self.metadata = [] 
-        self.seen_hashes = set() # O(1) deduplication check
+        self.seen_hashes = set() 
         self.db_lock = threading.Lock()
+        
+        self.cloud_storage = HFPersistence()
+        self._sync_timer = None
 
-        # MongoDB Persistence Collection
-        self.collection = MongoDB.get_collection("vector_receipts")
+        logger.info("[VECTOR] Fetching FAISS index and metadata from Hugging Face...")
         
-        logger.info("[VECTOR] Fetching historical receipts from MongoDB to rebuild FAISS index...")
-        all_records = list(self.collection.find({}))
-        
-        if all_records:
-            vectors = []
-            for record in all_records:
-                vectors.append(record["vector"])
-                meta = {
-                    "username": record["username"],
-                    "content": record["content"],
-                    "timestamp": record["timestamp"]
-                }
-                self.metadata.append(meta)
-                self.seen_hashes.add(self._generate_hash(record["username"], record["content"]))
-            
-            # Instantly rebuild the FAISS map in RAM
-            self.index.add(np.array(vectors).astype(np.float32))
-            logger.info(f"[VECTOR] Successfully loaded {len(all_records)} receipts into RAM.")
+        index_loaded = False
+        if self.cloud_storage.download_file("faiss_index.bin", "/tmp/faiss_index.bin"):
+            try:
+                self.index = faiss.read_index("/tmp/faiss_index.bin")
+                index_loaded = True
+            except Exception as e:
+                logger.error(f"[VECTOR] Failed to read FAISS index from disk: {e}")
+                
+        if self.cloud_storage.download_file("vector_metadata.json", "/tmp/vector_metadata.json"):
+            try:
+                with open("/tmp/vector_metadata.json", "r", encoding="utf-8") as f:
+                    self.metadata = json.load(f)
+                for m in self.metadata:
+                    self.seen_hashes.add(self._generate_hash(m["username"], m["content"]))
+            except Exception as e:
+                logger.error(f"[VECTOR] Failed to read metadata JSON from disk: {e}")
+
+        if not index_loaded:
+            logger.info("[VECTOR] No historical index found on HF. Starting fresh.")
+            self.index = faiss.IndexFlatIP(self.dimension)
         else:
-            logger.info("[VECTOR] No historical receipts found. Starting fresh.")
+            logger.info(f"[VECTOR] Successfully loaded {len(self.metadata)} receipts into RAM from HF.")
             
         logger.info("[VECTOR] Engine Online.")
 
@@ -62,8 +104,32 @@ class VectorMemory:
         """Generates a unique fingerprint for a message to prevent duplicate embedding."""
         return hashlib.md5(f"{username}::{content}".encode('utf-8')).hexdigest()
 
+    def _schedule_sync(self):
+        """Debounces the Cloud upload to prevent API Rate Limits. Waits 30s after the chat settles."""
+        with self.db_lock:
+            if self._sync_timer is not None:
+                self._sync_timer.cancel()
+            self._sync_timer = threading.Timer(30.0, self.force_sync)
+            self._sync_timer.start()
+
+    def force_sync(self):
+        """Compiles the RAM data to local disk and streams it to Hugging Face."""
+        logger.info("[VECTOR] Compiling binary memory payload...")
+        with self.db_lock:
+            faiss.write_index(self.index, "/tmp/faiss_index.bin")
+            with open("/tmp/vector_metadata.json", "w", encoding="utf-8") as f:
+                json.dump(self.metadata, f)
+        
+        # Executes network I/O outside of db_lock to avoid freezing the chat engine
+        try:
+            self.cloud_storage.upload_file("faiss_index.bin", "/tmp/faiss_index.bin")
+            self.cloud_storage.upload_file("vector_metadata.json", "/tmp/vector_metadata.json")
+            logger.info("[VECTOR] Hugging Face Backup complete.")
+        except Exception as e:
+            logger.error(f"[VECTOR] Hugging Face upload failed: {e}")
+
     def add_message(self, username: str, content: str, timestamp: str):
-        """Embeds a single message, adds to FAISS, and backs up to Mongo."""
+        """Embeds a single message, updates RAM, and schedules a background backup."""
         msg_hash = self._generate_hash(username, content)
         
         with self.db_lock:
@@ -83,18 +149,11 @@ class VectorMemory:
             })
             self.seen_hashes.add(msg_hash)
             
-            # Background cloud save
-            self.collection.insert_one({
-                "username": username,
-                "content": content,
-                "timestamp": timestamp,
-                "vector": vector.tolist()
-            })
+        self._schedule_sync()
 
     def add_batch_messages(self, messages: list):
         """Optimized batch ingestion for the backfill cronjob."""
         new_messages = []
-        
         with self.db_lock:
             for msg in messages:
                 msg_hash = self._generate_hash(msg["username"], msg["content"])
@@ -111,7 +170,6 @@ class VectorMemory:
         embeddings_generator = self.embedding_model.embed(texts_to_embed)
         vectors = [vec.astype(np.float32) for vec in embeddings_generator]
         
-        mongo_docs = []
         with self.db_lock:
             self.index.add(np.array(vectors))
             for i, msg in enumerate(new_messages):
@@ -120,24 +178,15 @@ class VectorMemory:
                     "content": msg["content"],
                     "timestamp": msg["timestamp"]
                 })
-                mongo_docs.append({
-                    "username": msg["username"],
-                    "content": msg["content"],
-                    "timestamp": msg["timestamp"],
-                    "vector": vectors[i].tolist()
-                })
                 
-            if mongo_docs:
-                self.collection.insert_many(mongo_docs)
-                
+        self.force_sync()
         return len(new_messages)
 
     def search_similar(self, query: str, top_k: int = 5, username: str = None):
-        # Embed the query
-        query_vector = self.embedding_model.embed([query]) # <--- Fixed attribute name
-        query_vector = np.array(list(query_vector), dtype=np.float32) # Ensure generator converts to array correctly
+        query_vector = self.embedding_model.embed([query]) 
+        query_vector = np.array(list(query_vector), dtype=np.float32) 
         
-        distances, indices = self.index.search(query_vector, top_k * 3) # Fetch extra to account for filtering
+        distances, indices = self.index.search(query_vector, top_k * 3)
         
         results = []
         for i, idx in enumerate(indices[0]):
@@ -145,8 +194,6 @@ class VectorMemory:
                 continue
                 
             item = self.metadata[idx]
-            
-            # If username filter is active, skip if it doesn't match
             if username and item.get("username", "").lower() != username.lower():
                 continue
                 
@@ -156,5 +203,5 @@ class VectorMemory:
                 
         return results
 
-# Initialize the singleton immediately so the model is ready when the app boots
+# Initialize the singleton immediately
 vector_db = VectorMemory()
