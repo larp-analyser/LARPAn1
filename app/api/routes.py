@@ -4,7 +4,6 @@ from app.engine.dispatcher import dispatcher
 
 from app.tasks.background import evolve_profile_task, hourly_sweep_task, vector_backfill_task
 
-from app.tasks.background import evolve_profile_task, hourly_sweep_task
 from app.teleprompter.optimizer import run_teleprompter_task
 from app.db.repositories import ChatRepository, GroupHistoryRepository, GlobalHistoryRepository
 from app.core.config import settings
