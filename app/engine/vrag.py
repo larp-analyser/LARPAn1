@@ -104,16 +104,15 @@ class AN1CombatEngine(dspy.Module):
                 needs_retry = True
             
             internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|ur|u|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
-            brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|slay|periodt)"
+            brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|periodt)"
             corporate_and_therapy = r"(bandwidth|unpack|gaslight|gaslighting|problematic|synergy|mindset|journey|navigate|align|toxic|narcissist|narcissistic|trigger|triggered|trauma|boundaries|validate|validation|projecting|projection|leverage|pivot|holistic|paradigm|ideate|empower)"
             vocal_pauses = r"(uh|um|er|hmm|huh|oof|yikes|pfft|psh|ugh|welp|meh|haha|hehe|xd|kek|aww|oop|tsk|geez|jeez|dang|heck|yay|whoops)"
-            weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|chief|boss|kiddo|bucko|pal|chum|champ|sport|amigo|fella|fellas|peeps|yall)"
-            adverbial_crutches = r"(literally|basically|essentially|actually|honestly|frankly|seriously|obviously|genuinely|totally|absolutely|utterly|practically|technically|ironically)"
-            hedge_words = r"(kinda|sorta|maybe|perhaps|somewhat|probably|apparently|seemingly|supposedly|theoretically|hypothetically)"
-            observed_filler = r"(says|vibe|relevant|words|sentences)"
+            weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|kiddo|bucko|pal|yall)"
+            hedge_words = r"(kinda|sorta)"
+            observed_filler = r"(says|vibe|vibing|vibed|relevant|words|sentences)"
             
             filler_pattern = re.compile(
-                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words}|{observed_filler})\b", 
+                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{hedge_words}|{observed_filler})\b", 
                 re.IGNORECASE
             )
             
@@ -168,17 +167,6 @@ class AN1CombatEngine(dspy.Module):
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
 
-            elif re.search(r'\b(demonstrates|indicates|illustrates|profound|inadequate|deficit|exhibits|displays|fascinating|intriguing|indicative|perpetuate|manifests)\b', reply_text, re.IGNORECASE):
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for sounding like a pretentious academic. "
-                    "Stop using words like 'demonstrates', 'exhibits', or 'indicative'. "
-                    "You are a normal, grounded person. Use simple, sharp, everyday vocabulary to destroy them."
-                )
-                logger.warning("Academic vocabulary violation detected. Penalty applied.")
-                safety_trace += "| Academic Trope Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
-
             elif re.search(r'^(so,?|oh,? so|let me get this straight|you think|you really think|are you saying)\b', reply_text.strip(), re.IGNORECASE):
                 penalty = (
                     "CRITICAL PENALTY: Your response was rejected for echoing or acknowledging the user's premise. "
@@ -187,17 +175,6 @@ class AN1CombatEngine(dspy.Module):
                 )
                 logger.warning("Echo / Acknowledgment violation detected. Penalty applied.")
                 safety_trace += "| Echo Trope Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
-
-            elif re.search(r'\b(maybe you should|try to|it[\'’]?s time to|grow up|do yourself a favor|re-evaluate|reconsider|take a break|seek help)\b', reply_text, re.IGNORECASE):
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for offering advice or moralizing. "
-                    "You are not here to help them improve. You are not a guidance counselor. "
-                    "NEVER tell them what they 'should' do. Just state how pathetic they are currently acting."
-                )
-                logger.warning("Advice / Moralizing violation detected. Penalty applied.")
-                safety_trace += "| Advice Trope Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
             
@@ -430,10 +407,13 @@ class VRAGEngine(BaseEngine):
                 receipts = []
                 for m in combined_receipts:
                     short_time = m['timestamp'][:10] if len(m['timestamp']) > 10 else "Past"
-                    receipts.append(f"[{short_time}] {m['username']}: {m['content']}")
+                    if m.get("window_text"):
+                        receipts.append(f"[{short_time}]\n{m['window_text']}")
+                    else:
+                        receipts.append(f"[{short_time}] <utterance speaker='{m['username']}'>{m['content']}</utterance>")
                 
-                receipts_str = "\n".join(receipts)
-                graph_str += f"\n\n--- SEMANTIC MEMORY (PAST RECEIPTS) ---\n{receipts_str}"
+                receipts_str = "\n\n".join(receipts)
+                graph_str += f"\n\n--- SEMANTIC MEMORY (PAST CHATS WITH CONTEXT) ---\n{receipts_str}"
         except Exception as e:
             logger.error(f"[VRAG] Semantic vector retrieval failed: {e}")
 

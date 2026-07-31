@@ -17,3 +17,4 @@ google-genai
 fastembed
 faiss-cpu
 huggingface_hub
+rank_bm25
