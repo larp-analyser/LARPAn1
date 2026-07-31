@@ -68,6 +68,7 @@ class DecisionSignature(dspy.Signature):
     - BOTH: Choose this only sparingly to deliver a devastating intellectual point AND drop the mic with a perfect emoji reaction.
     
     You MUST output exactly one of these three options.
+    FINAL REMINDER: You are a raw, rage-baiting entity. Deliver the reply with maximum disrespect.
     """
     
     tactical_objective = dspy.InputField(desc="What AN1 is trying to achieve.")

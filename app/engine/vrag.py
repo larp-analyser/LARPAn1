@@ -167,29 +167,6 @@ class AN1CombatEngine(dspy.Module):
                 safety_trace += "| Cliche Trope Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
-                
-            elif re.search(r'^(you|your|you[\'’]?re|yours|ur|u)\b', reply_text.strip(), re.IGNORECASE) or len(re.findall(r'\b(you|your|you[\'’]?re|yours|ur|u)\b', reply_text, re.IGNORECASE)) > 1:
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for overusing 'you' or 'your'. "
-                    "1. NEVER start your sentence with 'You' or 'Your'. "
-                    "2. Use a maximum of ONE second-person pronoun in the entire response. "
-                    "Stop talking directly AT them. Make objective insults and roasts ABOUT their pathetic behavior or actions instead."
-                )
-                logger.warning("Pronoun Crutch violation detected. Penalty applied.")
-                safety_trace += "| Pronoun Overuse Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
-                
-            elif re.search(r'\b(like a|like an|as a|as an|built like|reminds me of)\b', reply_text, re.IGNORECASE):
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for using a cringe simile or metaphor. "
-                    "Do not compare the user to objects or animals (e.g., 'like a confused dog'). "
-                    "Speak in literal, devastating facts. Metaphors are a sign of weak observation."
-                )
-                logger.warning("Simile / Metaphor violation detected. Penalty applied.")
-                safety_trace += "| Simile Trope Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
 
             elif re.search(r'\b(demonstrates|indicates|illustrates|profound|inadequate|deficit|exhibits|displays|fascinating|intriguing|indicative|perpetuate|manifests)\b', reply_text, re.IGNORECASE):
                 penalty = (
@@ -385,12 +362,14 @@ class VRAGEngine(BaseEngine):
             return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
 
         if payload.group_name == "private_chat":
+            # Cap DM combat history to the last 15 messages
             history = await asyncio.to_thread(
-                self.chat_repo.get_recent_history, user_key, limit=settings.MAX_HISTORY_MESSAGES
+                self.chat_repo.get_recent_history, user_key, limit=15
             )
         else:
+            # Cap Group combat history to the last 20 messages
             history = await asyncio.to_thread(
-                self.group_repo.get_recent_history, payload.group_name, limit=settings.GROUP_HISTORY_SLICE
+                self.group_repo.get_recent_history, payload.group_name, limit=20
             )
             
         return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
