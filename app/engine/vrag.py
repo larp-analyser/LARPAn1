@@ -413,6 +413,23 @@ class VRAGEngine(BaseEngine):
         if tagged_profiles:
             graph_str += "\n\n--- TAGGED BYSTANDER DOSSIERS ---\n" + "\n\n".join(tagged_profiles)
         
+        try:
+            from app.db.vector_store import vector_db
+            # Search the vector database for 3 semantic receipts related to their current message
+            semantic_matches = await asyncio.to_thread(vector_db.search_similar, payload.message, top_k=3)
+            
+            if semantic_matches:
+                receipts = []
+                for m in semantic_matches:
+                    # Clean up timestamp for readability
+                    short_time = m['timestamp'][:10] if len(m['timestamp']) > 10 else "Past"
+                    receipts.append(f"[{short_time}] {m['username']}: {m['content']}")
+                
+                receipts_str = "\n".join(receipts)
+                graph_str += f"\n\n--- SEMANTIC MEMORY (PAST RECEIPTS) ---\n{receipts_str}"
+        except Exception as e:
+            logger.error(f"[VRAG] Semantic vector retrieval failed: {e}")
+
         initial_state = {
             "history": triage_history_str,
             "combat_history": combat_history_str,

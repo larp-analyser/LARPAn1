@@ -1,6 +1,9 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Header
 from app.api.models import IncomingPayload, EngineResponse
 from app.engine.dispatcher import dispatcher
+
+from app.tasks.background import evolve_profile_task, hourly_sweep_task, vector_backfill_task
+
 from app.tasks.background import evolve_profile_task, hourly_sweep_task
 from app.teleprompter.optimizer import run_teleprompter_task
 from app.db.repositories import ChatRepository, GroupHistoryRepository, GlobalHistoryRepository
@@ -106,3 +109,11 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
+@router.post("/gradio_api/cron/backfill_vectors")
+async def trigger_vector_backfill(background_tasks: BackgroundTasks, x_cron_secret: str = Header(None)):
+    if not x_cron_secret or x_cron_secret != settings.CRON_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized cron trigger")
+        
+    background_tasks.add_task(vector_backfill_task)
+    return {"status": "vector_backfill_scheduled"}

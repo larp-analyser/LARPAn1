@@ -14,3 +14,5 @@ gradio
 spaces
 openai
 google-genai
+fastembed
+faiss-cpu
