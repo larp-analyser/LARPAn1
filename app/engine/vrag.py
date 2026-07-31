@@ -415,13 +415,30 @@ class VRAGEngine(BaseEngine):
         
         try:
             from app.db.vector_store import vector_db
-            # Search the vector database for 10 semantic receipts related to their current message
-            semantic_matches = await asyncio.to_thread(vector_db.search_similar, payload.message, top_k=10)
             
-            if semantic_matches:
+            # 1. Pull 5 personal receipts strictly belonging to the active user
+            personal_matches = await asyncio.to_thread(
+                vector_db.search_similar, payload.message, top_k=10, username=payload.username
+            )
+            
+            # 2. Pull 5 global receipts from anyone in the group/server
+            global_matches = await asyncio.to_thread(
+                vector_db.search_similar, payload.message, top_k=6
+            )
+            
+            # Combine and deduplicate by content/id
+            seen_contents = set()
+            combined_receipts = []
+            
+            for m in personal_matches + global_matches:
+                content_key = m.get('content', '')
+                if content_key not in seen_contents:
+                    seen_contents.add(content_key)
+                    combined_receipts.append(m)
+            
+            if combined_receipts:
                 receipts = []
-                for m in semantic_matches:
-                    # Clean up timestamp for readability
+                for m in combined_receipts:
                     short_time = m['timestamp'][:10] if len(m['timestamp']) > 10 else "Past"
                     receipts.append(f"[{short_time}] {m['username']}: {m['content']}")
                 

@@ -132,24 +132,29 @@ class VectorMemory:
                 
         return len(new_messages)
 
-    def search_similar(self, query: str, top_k: int = 3) -> list:
-        """Finds semantic receipts matching the query."""
-        with self.db_lock:
-            if self.index.ntotal == 0:
-                return []
-                
-        embeddings_generator = self.embedding_model.embed([query])
-        query_vector = next(embeddings_generator).astype(np.float32)
+    def search_similar(self, query: str, top_k: int = 5, username: str = None):
+        # Embed the query
+        query_vector = self.embedding_model.embed([query]) # <--- Fixed attribute name
+        query_vector = np.array(list(query_vector), dtype=np.float32) # Ensure generator converts to array correctly
         
-        with self.db_lock:
-            distances, indices = self.index.search(np.array([query_vector]), top_k)
+        distances, indices = self.index.search(query_vector, top_k * 3) # Fetch extra to account for filtering
+        
+        results = []
+        for i, idx in enumerate(indices[0]):
+            if idx == -1 or idx >= len(self.metadata):
+                continue
+                
+            item = self.metadata[idx]
             
-            results = []
-            for i, idx in enumerate(indices[0]):
-                if idx != -1 and idx < len(self.metadata):
-                    if distances[0][i] > 0.55: 
-                        results.append(self.metadata[idx])
-            return results
+            # If username filter is active, skip if it doesn't match
+            if username and item.get("username", "").lower() != username.lower():
+                continue
+                
+            results.append(item)
+            if len(results) >= top_k:
+                break
+                
+        return results
 
 # Initialize the singleton immediately so the model is ready when the app boots
 vector_db = VectorMemory()
