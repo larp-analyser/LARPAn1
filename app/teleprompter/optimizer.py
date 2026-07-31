@@ -142,14 +142,6 @@ def run_teleprompter_task():
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             
-            # 7. Hot-reload the live engine in memory
-            from app.engine.vrag import combat_engine
-            combat_engine.load(temp_path)
-            logger.info("[TELEPROMPTER] Live engine dynamically updated with new weights.")
-            
-            # Clean up unique temp file
-            os.remove(temp_path)
-            
         logger.info("[TELEPROMPTER] Compilation Complete! Weights saved to MongoDB.")
     except Exception as e:
         logger.error(f"[TELEPROMPTER] Error during optimization: {e}")

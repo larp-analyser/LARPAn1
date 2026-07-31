@@ -267,7 +267,10 @@ class VectorMemory:
         query_vector = self.embedding_model.embed([query]) 
         query_vector = np.array(list(query_vector), dtype=np.float32) 
         
-        distances, faiss_indices = self.index.search(query_vector, top_k * 3)
+        with self.db_lock:
+            if self.index.ntotal == 0:
+                return []
+            distances, faiss_indices = self.index.search(query_vector, top_k * 3)
         
         # 2. BM25 Keyword Search
         bm25_indices = []
