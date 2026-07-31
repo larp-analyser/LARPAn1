@@ -415,8 +415,8 @@ class VRAGEngine(BaseEngine):
         
         try:
             from app.db.vector_store import vector_db
-            # Search the vector database for 3 semantic receipts related to their current message
-            semantic_matches = await asyncio.to_thread(vector_db.search_similar, payload.message, top_k=3)
+            # Search the vector database for 10 semantic receipts related to their current message
+            semantic_matches = await asyncio.to_thread(vector_db.search_similar, payload.message, top_k=10)
             
             if semantic_matches:
                 receipts = []

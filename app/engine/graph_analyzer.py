@@ -121,7 +121,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
     if edges:
         context_lines.append("\nACTIVE RELATIONSHIPS (Weighted by Time/Decay):")
         edges.sort(key=lambda x: x[2].get('weight', 0), reverse=True)
-        for source, target, data in edges[:5]:
+        for source, target, data in edges[:10]:
             w = data.get('weight', 0)
             status = "[FADING]" if w < 2.0 else "[ACTIVE]"
             context_lines.append(f"- {status} {source} [{data['relation']}] {target} (Relevance: {w:.1f})")
