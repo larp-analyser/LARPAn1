@@ -87,7 +87,7 @@ class TriageSignature(dspy.Signature):
         2. OR they made a statement that CAN be FLIPPED ON THEM IN THE FORM OF A ROAST OR A RAGEBAIT.
         3. OR they said something EXTREMELY STUPID in the context of the chat.
     - OUTPUT False if: 
-        1. IF YOU HAVE ALREADY REPLIED ONCE IN THE IMMEDIATE CONTEXT OF THE CHAT.
+        # VERY IMPORTANT: 1. IF YOU HAVE ALREADY REPLIED TWICE IN THE IMMEDIATE CHAT HISTORY.
         2. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you.
         3. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
         4. IF YOU HAVE ALREADY RESPONDED TWICE IN THE IMMMEDIATE CHAT HISTORY.
