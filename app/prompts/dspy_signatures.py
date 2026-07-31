@@ -86,6 +86,7 @@ class TriageSignature(dspy.Signature):
         1. User(s) is(are) SPAMMING.
         2. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you.
         3. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. 
+        4. You have already responded TWICE in the immediate chat history.
         5. THE RESPONSE MAY CAUSE SELF EMBARRASMENT FOR AN1, like if the user TRIES to trap AN1 by saying "talk if gay", etcetera.
         6. THE user PINGED @AN1 (or anyone else), but IT IS EMPTY (A GHOST PING).
         
