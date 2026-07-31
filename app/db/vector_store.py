@@ -73,8 +73,9 @@ class VectorMemory:
         
         self.metadata = [] 
         self.seen_hashes = set() 
-        self.rolling_buffer = []  # Holds the last 2 raw message dicts for live sliding window
+        self.rolling_buffers = {}  # FIXED: Maps group_name to its own buffer
         self.db_lock = threading.Lock()
+        self.upload_lock = threading.Lock()
         self.bm25 = None
         
         self.cloud_storage = HFPersistence()
@@ -96,10 +97,15 @@ class VectorMemory:
                     self.metadata = json.load(f)
                 for m in self.metadata:
                     self.seen_hashes.add(self._generate_hash(m["username"], m["content"]))
-                
-                # Pre-fill rolling buffer with up to last 2 messages
-                for m in self.metadata[-2:]:
-                    self.rolling_buffer.append({"username": m["username"], "content": m["content"]})
+                    
+                    # FIXED: Rebuild the isolated buffers accurately on boot
+                    grp = m.get("group_name", "unknown")
+                    if grp not in self.rolling_buffers:
+                        self.rolling_buffers[grp] = []
+                    self.rolling_buffers[grp].append({"username": m["username"], "content": m["content"]})
+                    if len(self.rolling_buffers[grp]) > 2:
+                        self.rolling_buffers[grp].pop(0)
+
             except Exception as e:
                 logger.error(f"[VECTOR] Failed to read metadata JSON from disk: {e}")
 
@@ -112,9 +118,10 @@ class VectorMemory:
         self._rebuild_bm25()
         logger.info("[VECTOR] Engine Online with BM25 + FAISS Hybrid RRF Search.")
 
-    def _generate_hash(self, username: str, content: str) -> str:
-        """Generates a unique fingerprint for a message to prevent duplicate embedding."""
-        return hashlib.md5(f"{username}::{content}".encode('utf-8')).hexdigest()
+    def _generate_hash(self, group_name: str, username: str, content: str, timestamp: str) -> str:
+        """Generates a unique fingerprint using temporal and channel metadata."""
+        unique_string = f"{group_name}::{username}::{content}::{timestamp}"
+        return hashlib.md5(unique_string.encode('utf-8')).hexdigest()
 
     def _build_context_window(self, previous_msgs: list, current_username: str, current_content: str) -> str:
         """Formats target message with up to 2 preceding messages using strict XML tagging."""
@@ -146,21 +153,26 @@ class VectorMemory:
 
     def force_sync(self):
         """Compiles the RAM data to local disk and streams it to Hugging Face."""
-        logger.info("[VECTOR] Compiling binary memory payload...")
-        with self.db_lock:
-            faiss.write_index(self.index, "/tmp/faiss_index.bin")
-            with open("/tmp/vector_metadata.json", "w", encoding="utf-8") as f:
-                json.dump(self.metadata, f)
-        
+        if not self.upload_lock.acquire(blocking=False):
+            logger.info("[VECTOR] Backup already in progress. Skipping redundant sync.")
+            return
+
         try:
+            logger.info("[VECTOR] Compiling binary memory payload...")
+            with self.db_lock:
+                faiss.write_index(self.index, "/tmp/faiss_index.bin")
+                with open("/tmp/vector_metadata.json", "w", encoding="utf-8") as f:
+                    json.dump(self.metadata, f)
+            
             self.cloud_storage.upload_file("faiss_index.bin", "/tmp/faiss_index.bin")
             self.cloud_storage.upload_file("vector_metadata.json", "/tmp/vector_metadata.json")
             logger.info("[VECTOR] Hugging Face Backup complete.")
         except Exception as e:
             logger.error(f"[VECTOR] Hugging Face upload failed: {e}")
+        finally:
+            self.upload_lock.release()
 
-    def add_message(self, username: str, content: str, timestamp: str):
-        """Embeds a 3-message XML sliding window, updates RAM, and schedules a background backup."""
+    def add_message(self, group_name: str, username: str, content: str, timestamp: str):
         msg_hash = self._generate_hash(username, content)
         
         with self.db_lock:
@@ -168,7 +180,9 @@ class VectorMemory:
                 return
 
         with self.db_lock:
-            buffer_copy = list(self.rolling_buffer)
+            if group_name not in self.rolling_buffers:
+                self.rolling_buffers[group_name] = []
+            buffer_copy = list(self.rolling_buffers[group_name])
 
         window_text = self._build_context_window(buffer_copy, username, content)
         
@@ -178,6 +192,7 @@ class VectorMemory:
         with self.db_lock:
             self.index.add(np.array([vector]))
             self.metadata.append({
+                "group_name": group_name, # FIXED: Save group_name to metadata
                 "username": username,
                 "content": content,
                 "timestamp": timestamp,
@@ -185,16 +200,15 @@ class VectorMemory:
             })
             self.seen_hashes.add(msg_hash)
             
-            self.rolling_buffer.append({"username": username, "content": content})
-            if len(self.rolling_buffer) > 2:
-                self.rolling_buffer.pop(0)
+            self.rolling_buffers[group_name].append({"username": username, "content": content})
+            if len(self.rolling_buffers[group_name]) > 2:
+                self.rolling_buffers[group_name].pop(0)
                 
             self._rebuild_bm25()
             
         self._schedule_sync()
 
-    def add_batch_messages(self, messages: list):
-        """Optimized batch ingestion with sliding window construction."""
+    def add_batch_messages(self, group_name: str, messages: list, skip_sync: bool = False):
         new_messages = []
         with self.db_lock:
             for msg in messages:
@@ -206,14 +220,19 @@ class VectorMemory:
         if not new_messages:
             return 0
 
+        with self.db_lock:
+            if group_name not in self.rolling_buffers:
+                self.rolling_buffers[group_name] = []
+            batch_buffer = list(self.rolling_buffers[group_name])
+
         windows_to_embed = []
         batch_metadata_entries = []
         
-        batch_buffer = list(self.rolling_buffer)
         for msg in new_messages:
             win_text = self._build_context_window(batch_buffer, msg["username"], msg["content"])
             windows_to_embed.append(win_text)
             batch_metadata_entries.append({
+                "group_name": group_name, # FIXED: Save group_name to metadata
                 "username": msg["username"],
                 "content": msg["content"],
                 "timestamp": msg["timestamp"],
@@ -223,7 +242,7 @@ class VectorMemory:
             if len(batch_buffer) > 2:
                 batch_buffer.pop(0)
 
-        logger.info(f"[VECTOR] Embedding batch of {len(windows_to_embed)} historical context windows...")
+        logger.info(f"[VECTOR] Embedding batch of {len(windows_to_embed)} historical context windows for {group_name}...")
         
         embeddings_generator = self.embedding_model.embed(windows_to_embed)
         vectors = [vec.astype(np.float32) for vec in embeddings_generator]
@@ -231,10 +250,12 @@ class VectorMemory:
         with self.db_lock:
             self.index.add(np.array(vectors))
             self.metadata.extend(batch_metadata_entries)
-            self.rolling_buffer = batch_buffer[-2:]
+            self.rolling_buffers[group_name] = batch_buffer[-2:]
             self._rebuild_bm25()
                 
-        self.force_sync()
+        if not skip_sync:
+            self.force_sync()
+            
         return len(new_messages)
 
     def search_similar(self, query: str, top_k: int = 5, username: str = None):

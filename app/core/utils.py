@@ -28,15 +28,22 @@ def sanitize_think_tags(text: str) -> str:
     return clean.strip()
 
 def trim_history_by_tokens(history_docs: list, max_tokens: int) -> list:
-    """Trim history to fit within a token budget using word-count estimation."""
     total = 0
     trimmed = []
-    for m in reversed(history_docs):
+    for i, m in enumerate(reversed(history_docs)):
         sender = m.get("username") or m.get("sender") or m.get("role") or "User"
         formatted = f"[{sender}]: {m.get('content', '')}"
         estimated_tokens = int(len(formatted.split()) * 1.5)
+        
         if total + estimated_tokens > max_tokens:
+            # If it's the very first message, truncate it heavily so we don't return an empty list
+            if i == 0:
+                words = formatted.split()
+                safe_words = int(max_tokens / 1.5)
+                m["content"] = " ".join(words[:safe_words]) + "... [TRUNCATED]"
+                trimmed.insert(0, m)
             break
+            
         trimmed.insert(0, m)
         total += estimated_tokens
     return trimmed

@@ -118,21 +118,29 @@ def run_teleprompter_task():
             student = AN1CombatEngine(load_compiled=False)
             compiled_engine = teleprompter.compile(student, trainset=trainset)
             
-            # 6. Save optimized weights temporarily using process-isolated unique file
+            # 6. Save optimized weights temporarily
             with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False) as tmp_file:
                 temp_path = tmp_file.name
                 
-            compiled_engine.save(temp_path)
-            
-            with open(temp_path, "r", encoding="utf-8") as f:
-                weights_json = f.read()
+            try:    
+                compiled_engine.save(temp_path)
+                with open(temp_path, "r", encoding="utf-8") as f:
+                    weights_json = f.read()
+                    
+                weights_col = MongoDB.get_collection("compiled_weights")
+                weights_col.update_one(
+                    {"_id": "combat_engine"},
+                    {"$set": {"weights": weights_json}},
+                    upsert=True
+                )
                 
-            weights_col = MongoDB.get_collection("compiled_weights")
-            weights_col.update_one(
-                {"_id": "combat_engine"},
-                {"$set": {"weights": weights_json}},
-                upsert=True
-            )
+                from app.engine.vrag import combat_engine
+                combat_engine.load(temp_path)
+                logger.info("[TELEPROMPTER] Live engine dynamically updated with new weights.")
+            finally:
+                # This executes EVEN IF an error occurs above, preventing the disk leak
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
             
             # 7. Hot-reload the live engine in memory
             from app.engine.vrag import combat_engine

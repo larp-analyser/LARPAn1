@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import threading
 import dspy
 from datetime import datetime, timezone
 from app.core.config import settings
@@ -29,19 +30,31 @@ from app.prompts.dspy_signatures import GraphExtractionSignature
 
 logger = logging.getLogger(__name__)
 
+evolution_locks = {}
+evolution_locks_lock = threading.Lock()
+
+def get_entity_lock(entity_key: str):
+    with evolution_locks_lock:
+        if entity_key not in evolution_locks:
+            evolution_locks[entity_key] = threading.Lock()
+        return evolution_locks[entity_key]
+        
 async def vector_backfill_task():
-    """Scans all chat histories and bulk-embeds missing messages into the Vector database."""
+    """Scans all chat histories and bulk-embeds missing messages into the Vector database using sliding windows."""
     logger.info("[VECTOR_BACKFILL] Initiating semantic memory backfill sweep...")
+    group_repo = GroupHistoryRepository()
     chat_repo = ChatRepository()
     
+    total_embedded = 0
+    
     try:
-        # Fetch all user chat histories
-        all_chats = await asyncio.to_thread(lambda: list(chat_repo.collection.find({})))
-        messages_to_embed = []
-        
-        for doc in all_chats:
+        # 1. Backfill Server/Group Chats (Chronological Order)
+        all_groups = await asyncio.to_thread(lambda: list(group_repo.collection.find({})))
+        for doc in all_groups:
+            group_name = doc["_id"]
+            messages_to_embed = []
+            
             for msg in doc.get("messages", []):
-                # Only embed actual user messages (skip AN1 replies and system messages)
                 if msg.get("role") == "user" and msg.get("content") and msg.get("username"):
                     messages_to_embed.append({
                         "username": msg["username"],
@@ -49,152 +62,196 @@ async def vector_backfill_task():
                         "timestamp": msg.get("timestamp", datetime.now(timezone.utc).isoformat())
                     })
                     
-        if messages_to_embed:
-            embedded_count = await asyncio.to_thread(vector_db.add_batch_messages, messages_to_embed)
-            logger.info(f"[VECTOR_BACKFILL] Complete. Embedded {embedded_count} new historical receipts.")
+            if messages_to_embed:
+                # Pass skip_sync=True to avoid Hugging Face rate limits
+                count = await asyncio.to_thread(vector_db.add_batch_messages, group_name, messages_to_embed, True)
+                total_embedded += count
+
+        # 2. Backfill DMs (Private chats are stored in chat_repo, not group_repo)
+        all_dms = await asyncio.to_thread(lambda: list(chat_repo.collection.find({"_id": {"$regex": "^private_chat:"}})))
+        for doc in all_dms:
+            # For DMs, the group_name effectively acts as the isolated channel
+            group_name = doc["_id"] 
+            messages_to_embed = []
+            
+            for msg in doc.get("messages", []):
+                if msg.get("role") == "user" and msg.get("content") and msg.get("username"):
+                    messages_to_embed.append({
+                        "username": msg["username"],
+                        "content": msg["content"],
+                        "timestamp": msg.get("timestamp", datetime.now(timezone.utc).isoformat())
+                    })
+                    
+            if messages_to_embed:
+                count = await asyncio.to_thread(vector_db.add_batch_messages, group_name, messages_to_embed, True)
+                total_embedded += count
+
+        # 3. Final Upload
+        if total_embedded > 0:
+            vector_db.force_sync()
+            logger.info(f"[VECTOR_BACKFILL] Complete. Embedded {total_embedded} new historical context windows.")
         else:
             logger.info("[VECTOR_BACKFILL] No messages found to backfill.")
+            
     except Exception as e:
         logger.error(f"[VECTOR_BACKFILL] Error during backfill: {e}")
 
 async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRepository, is_user: bool = True):
-    if not history_docs:
+    lock = get_entity_lock(entity_key)
+    if not lock.acquire(blocking=False):
+        logger.info(f"[BACKGROUND] Evolution already in progress for {entity_key}. Skipping to prevent data loss.")
         return
-        
-    history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
+ 
+    try:        
+        if not history_docs:
+            return
+            
+        history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
 
-    if is_user:
-        existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
-    else:
-        existing_graph = await asyncio.to_thread(graph_repo.get_group_graph, entity_key)
-    
-    existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", []) if isinstance(e, dict)])
-    if not existing_entities_str:
-        existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
-
-    existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", []) if r.get('source') and r.get('target')])
-    
-    if is_user:
-        username = entity_key.split(":", 1)[1] if ":" in entity_key else entity_key
-        target_focus_str = f"Deep psychological profile of user: {username}"
-    else:
-        target_focus_str = "Map the social dynamics, relationships, and alliances between all active users."
-    
-    extractor = dspy.Predict(GraphExtractionSignature)
-    new_graph_data = None
-    extraction_guidance = (
-        "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. YOU ARE AN1. (SELF-IDENTITY) "
-        "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users. "
-        "LIMIT: Extract a MAXIMUM of 5 key entities and 5 key relationships. Do not extract trivial concepts or filler text. Stop immediately once formatted."
-    )
-    
-    try:
-        res = await asyncio.to_thread(
-            background_pool.execute_with_retry,
-            extractor,
-            target_focus=target_focus_str,
-            chat_history=history_str,
-            existing_entities=existing_entities_str or "None",
-            existing_relationships=existing_rels_str or "None",
-            extraction_guidance=extraction_guidance
-        )
-        
-        forbidden_ids = {"an1", "system", "bot", "assistant"}
-        safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
-        safe_relationships = res.extracted_graph.relationships
-        bad_entities = [e for e in safe_entities if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10]
-        
-        if len(bad_entities) > len(safe_entities) / 2:
-            logger.warning("[BACKGROUND] Extractor hallucinated poor entities. Aborting update.")
+        if is_user:
+            existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
         else:
-            new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
-    except Exception as e:
-        logger.error(f"[BACKGROUND] Graph extraction failed across pool: {e}")
+            existing_graph = await asyncio.to_thread(graph_repo.get_group_graph, entity_key)
+        
+        existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", []) if isinstance(e, dict)])
+        if not existing_entities_str:
+            existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
 
-    if new_graph_data:
-        existing_entities_dict = {}
-        for e in existing_graph.get("entities", []):
-            if isinstance(e, str):
-                existing_entities_dict[e] = {"id": e, "type": "Unknown", "attributes": ""}
-            elif isinstance(e, dict):
-                if e.get("attributes") == "Initializing...":
-                    continue
-                existing_entities_dict[e["id"]] = e
-        
-        for new_ent in new_graph_data.entities:
-            if new_ent.id in existing_entities_dict:
-                existing_attrs = existing_entities_dict[new_ent.id].get("attributes", "")
-                if new_ent.attributes and new_ent.attributes not in existing_attrs:
-                    # Break apart, deduplicate, and keep only the latest 5 traits
-                    combined = [a.strip() for a in existing_attrs.split("|") if a.strip()]
-                    if new_ent.attributes not in combined:
-                        combined.append(new_ent.attributes)
-                    
-                    existing_entities_dict[new_ent.id]["attributes"] = " | ".join(combined[-5:])
-            else:
-                existing_entities_dict[new_ent.id] = {
-                    "id": new_ent.id,
-                    "type": new_ent.type,
-                    "attributes": new_ent.attributes
-                }
-        
-        merged_entities = list(existing_entities_dict.values())
-        existing_rels = existing_graph.get("relationships", [])
-        
-        # Group relationships strictly by source and target
-        seen_rels = {(r.get("source"), r.get("target")): i for i, r in enumerate(existing_rels) if r.get("source") and r.get("target")}
-        
-        for rel in new_graph_data.relationships:
-            rel_tuple = (rel.source, rel.target)
-            if rel_tuple in seen_rels:
-                idx = seen_rels[rel_tuple]
-                # Calculate a moving average for intensity to track historical beef
-                existing_rels[idx]["intensity"] = round((existing_rels[idx]["intensity"] + float(rel.intensity)) / 2, 2)
-                
-                # Append the new relationship description if it is distinct
-                if rel.relation not in existing_rels[idx]["relation"]:
-                    existing_rels[idx]["relation"] = f"{existing_rels[idx]['relation']} | {rel.relation}"
-                    
-                # Stamp exactly when this edge was last reinforced
-                existing_rels[idx]["last_seen"] = datetime.now(timezone.utc).isoformat()
-            else:
-                seen_rels[rel_tuple] = len(existing_rels)
-                existing_rels.append({
-                    "source": rel.source, 
-                    "relation": rel.relation, 
-                    "target": rel.target,
-                    "intensity": float(rel.intensity),
-                    "last_seen": datetime.now(timezone.utc).isoformat()
-                })
-                
-        updated_graph = {
-            "entities": merged_entities,
-            "relationships": existing_rels,
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
+        existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", []) if r.get('source') and r.get('target')])
         
         if is_user:
-            await asyncio.to_thread(graph_repo.update_user_graph, entity_key, updated_graph)
+            username = entity_key.split(":", 1)[1] if ":" in entity_key else entity_key
+            target_focus_str = f"Deep psychological profile of user: {username}"
         else:
-            await asyncio.to_thread(graph_repo.update_group_graph, entity_key, updated_graph)
-            
-        logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
-    else:
-        entities = existing_graph.get("entities", [])
-        is_empty = not entities and not existing_graph.get("relationships")
-        is_only_stub = len(entities) == 1 and isinstance(entities[0], dict) and entities[0].get("attributes") == "Initializing..."
+            target_focus_str = "Map the social dynamics, relationships, and alliances between all active users."
         
-        if is_empty or is_only_stub:
-            logger.warning(f"[BACKGROUND] Empty vRAG extraction for {entity_key}. Injecting First Contact stub.")
-            stub_graph = {
-                "entities": [{"id": "System", "type": "Metadata", "attributes": "Initialized without entities."}],
-                "relationships": [],
+        extractor = dspy.Predict(GraphExtractionSignature)
+        new_graph_data = None
+        extraction_guidance = (
+            "CRITICAL RULE: DO NOT extract 'AN1' or 'System' as an entity. YOU ARE AN1. (SELF-IDENTITY) "
+            "Do NOT analyze, profile, or create relationships involving AN1 (i.e, YOU). Focus entirely on the human users. "
+            "LIMIT: Extract a MAXIMUM of 5 key entities and 5 key relationships. Do not extract trivial concepts or filler text. Stop immediately once formatted."
+        )
+        
+        try:
+            res = await asyncio.to_thread(
+                background_pool.execute_with_retry,
+                extractor,
+                target_focus=target_focus_str,
+                chat_history=history_str,
+                existing_entities=existing_entities_str or "None",
+                existing_relationships=existing_rels_str or "None",
+                extraction_guidance=extraction_guidance
+            )
+            
+            forbidden_ids = {"an1", "system", "bot", "assistant"}
+            safe_entities = [e for e in res.extracted_graph.entities if str(e.id).lower() not in forbidden_ids]
+            safe_relationships = res.extracted_graph.relationships
+            bad_entities = [e for e in safe_entities if e.id.lower() in [ee.lower() for ee in existing_entities_str.split(", ")] and len(e.attributes) < 10]
+            
+            if len(bad_entities) > len(safe_entities) / 2:
+                logger.warning("[BACKGROUND] Extractor hallucinated poor entities. Aborting update.")
+            else:
+                new_graph_data = type('GraphData', (), {'entities': safe_entities, 'relationships': safe_relationships})
+        except Exception as e:
+            logger.error(f"[BACKGROUND] Graph extraction failed across pool: {e}")
+
+        if new_graph_data:
+            existing_entities_dict = {}
+            for e in existing_graph.get("entities", []):
+                if isinstance(e, str):
+                    existing_entities_dict[e] = {"id": e, "type": "Unknown", "attributes": ""}
+                elif isinstance(e, dict):
+                    if e.get("attributes") == "Initializing...":
+                        continue
+                    existing_entities_dict[e["id"]] = e
+            
+            for new_ent in new_graph_data.entities:
+                if new_ent.id in existing_entities_dict:
+                    existing_attrs = existing_entities_dict[new_ent.id].get("attributes", "")
+                    if new_ent.attributes and new_ent.attributes not in existing_attrs:
+                        # Break apart, deduplicate, and keep only the latest 5 traits
+                        combined = [a.strip() for a in existing_attrs.split("|") if a.strip()]
+                        if new_ent.attributes not in combined:
+                            combined.append(new_ent.attributes)
+                        
+                        existing_entities_dict[new_ent.id]["attributes"] = " | ".join(combined[-5:])
+                else:
+                    existing_entities_dict[new_ent.id] = {
+                        "id": new_ent.id,
+                        "type": new_ent.type,
+                        "attributes": new_ent.attributes
+                    }
+            
+            merged_entities = list(existing_entities_dict.values())
+            existing_rels = existing_graph.get("relationships", [])
+            
+            # Group relationships strictly by source and target
+            seen_rels = {(r.get("source"), r.get("target")): i for i, r in enumerate(existing_rels) if r.get("source") and r.get("target")}
+            
+            for rel in new_graph_data.relationships:
+                rel_tuple = (rel.source, rel.target)
+                if rel_tuple in seen_rels:
+                    idx = seen_rels[rel_tuple]
+                    # Calculate a moving average for intensity to track historical beef
+                    existing_rels[idx]["intensity"] = round((existing_rels[idx]["intensity"] + float(rel.intensity)) / 2, 2)
+                    
+                    # Append the new relationship description if it is distinct
+                    # Split, deduplicate, and keep ONLY the latest 5 relationship descriptors
+                    combined = [r.strip() for r in existing_rels[idx]["relation"].split("|") if r.strip()]
+                    if rel.relation not in combined:
+                        combined.append(rel.relation)
+                    
+                    # Cap it at 5 to prevent infinite string bloat
+                    existing_rels[idx]["relation"] = " | ".join(combined[-5:])
+                        
+                    # Stamp exactly when this edge was last reinforced
+                    existing_rels[idx]["last_seen"] = datetime.now(timezone.utc).isoformat()
+                else:
+                    seen_rels[rel_tuple] = len(existing_rels)
+                    existing_rels.append({
+                        "source": rel.source, 
+                        "relation": rel.relation, 
+                        "target": rel.target,
+                        "intensity": float(rel.intensity),
+                        "last_seen": datetime.now(timezone.utc).isoformat()
+                    })
+                    
+            updated_graph = {
+                "entities": merged_entities,
+                "relationships": existing_rels,
                 "last_updated": datetime.now(timezone.utc).isoformat()
             }
+            
             if is_user:
-                await asyncio.to_thread(graph_repo.update_user_graph, entity_key, stub_graph)
+                await asyncio.to_thread(graph_repo.update_user_graph, entity_key, updated_graph)
             else:
-                await asyncio.to_thread(graph_repo.update_group_graph, entity_key, stub_graph)
+                await asyncio.to_thread(graph_repo.update_group_graph, entity_key, updated_graph)
+                
+            logger.info(f"[BACKGROUND] Successfully extracted and updated graph for {entity_key}.")
+        else:
+            entities = existing_graph.get("entities", [])
+            is_empty = not entities and not existing_graph.get("relationships")
+            is_only_stub = len(entities) == 1 and isinstance(entities[0], dict) and entities[0].get("attributes") == "Initializing..."
+            
+            if is_only_stub:
+                # FIXED: Do not overwrite the database. Leave the "Initializing..." stub exactly as it is.
+                # This ensures the hourly_sweep_task will automatically try to profile them again later.
+                logger.warning(f"[BACKGROUND] Extraction failed for {entity_key}. Leaving 'Initializing...' stub intact for next sweep.")
+            elif is_empty:
+                # Only inject the failure stub if the graph was completely empty to begin with
+                logger.warning(f"[BACKGROUND] Empty vRAG extraction for {entity_key}. Injecting empty fallback.")
+                stub_graph = {
+                    "entities": [{"id": "System", "type": "Metadata", "attributes": "Initialized without entities."}],
+                    "relationships": [],
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+                if is_user:
+                    await asyncio.to_thread(graph_repo.update_user_graph, entity_key, stub_graph)
+                else:
+                    await asyncio.to_thread(graph_repo.update_group_graph, entity_key, stub_graph)
+    finally:
+        lock.release()   
 
 async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
     if is_group:
@@ -280,13 +337,13 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
             msg_data = latest_msg[0]
             await asyncio.to_thread(
                 vector_db.add_message, 
+                group_name, # <--- NEW PARAMETER ADDED HERE
                 msg_data.get("username", "Unknown"), 
                 msg_data.get("content", ""), 
                 msg_data.get("timestamp", datetime.now(timezone.utc).isoformat())
             )
     except Exception as e:
         logger.error(f"[BACKGROUND] Failed to ingest live vector message: {e}")
-        
         
     group_repo = GroupHistoryRepository()
     global_history_repo = GlobalHistoryRepository()

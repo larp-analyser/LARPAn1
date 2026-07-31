@@ -239,11 +239,13 @@ class CounterRepository:
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
             
-        update_op = {"$set": {"last_evolution": timestamp}}
-        if threshold is not None:
-            update_op["$inc"] = {"count": -threshold}
-        else:
-            update_op["$set"]["count"] = 0
+        # Unconditionally reset count to 0 to prevent negative race conditions
+        update_op = {
+            "$set": {
+                "last_evolution": timestamp,
+                "count": 0
+            }
+        }
             
         self.collection.update_one(
             {"_id": key},
