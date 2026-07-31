@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import gradio as gr
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,8 +12,17 @@ MongoDB.connect()
 
 original_init = FastAPI.__init__
 
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    MongoDB.connect()
+    yield
+
 def custom_init(self, *args, **kwargs):
+    if "lifespan" not in kwargs:
+        kwargs["lifespan"] = app_lifespan
     original_init(self, *args, **kwargs)
+    
+    # Inject routes and CORS middleware exactly once
     if not getattr(self, "_an1_injected", False):
         self.include_router(router)
         self.add_middleware(
@@ -22,12 +32,6 @@ def custom_init(self, *args, **kwargs):
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        
-        # Initialize DB safely inside the worker process
-        @self.on_event("startup")
-        def startup_db():
-            MongoDB.connect()
-            
         self._an1_injected = True
 
 # Overwrite FastAPI's initialization before Gradio constructs its internal App

@@ -84,10 +84,14 @@ class VectorMemory:
         logger.info("[VECTOR] Fetching FAISS index and metadata from Hugging Face...")
         
         index_loaded = False
-        if self.cloud_storage.download_file("faiss_index.bin", "/tmp/faiss_index.bin"):
+        if self.cloud_storage.download_file("vector_metadata.json", "/tmp/vector_metadata.json"):
             try:
-                self.index = faiss.read_index("/tmp/faiss_index.bin")
-                index_loaded = True
+                with open("/tmp/vector_metadata.json", "r", encoding="utf-8") as f:
+                    self.metadata = json.load(f)
+                for m in self.metadata:
+                    grp = m.get("group_name", "unknown")
+                    ts = m.get("timestamp", "")
+                    self.seen_hashes.add(self._generate_hash(grp, m["username"], m["content"], ts))
             except Exception as e:
                 logger.error(f"[VECTOR] Failed to read FAISS index from disk: {e}")
                 
@@ -173,7 +177,7 @@ class VectorMemory:
             self.upload_lock.release()
 
     def add_message(self, group_name: str, username: str, content: str, timestamp: str):
-        msg_hash = self._generate_hash(username, content)
+        msg_hash = self._generate_hash(group_name, username, content, timestamp)
         
         with self.db_lock:
             if msg_hash in self.seen_hashes:
@@ -212,7 +216,8 @@ class VectorMemory:
         new_messages = []
         with self.db_lock:
             for msg in messages:
-                msg_hash = self._generate_hash(msg["username"], msg["content"])
+                ts = msg.get("timestamp", "")
+                msg_hash = self._generate_hash(group_name, msg["username"], msg["content"], ts)
                 if msg_hash not in self.seen_hashes:
                     new_messages.append(msg)
                     self.seen_hashes.add(msg_hash)
