@@ -4,7 +4,7 @@ import asyncio
 from app.engine.base import BaseEngine
 from app.api.models import IncomingPayload, EngineResponse
 from app.core.llm_balancer import nvidia_combat_pool
-from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GlobalMemoryRepository
+from app.db.repositories import ChatRepository, GroupHistoryRepository, MemoryRepository, GroupMemoryRepository, GlobalMemoryRepository
 from app.prompts.roastbot_prompts import ROAST_PROMPT, GROUP_ROAST_PROMPT
 from app.core.config import settings
 from app.core.utils import sanitize_think_tags, trim_history_by_tokens

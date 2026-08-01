@@ -36,12 +36,12 @@ def trim_history_by_tokens(history_docs: list, max_tokens: int) -> list:
         estimated_tokens = int(len(formatted.split()) * 1.5)
         
         if total + estimated_tokens > max_tokens:
-            # If it's the very first message, truncate it heavily so we don't return an empty list
             if i == 0:
+                m_copy = m.copy()
                 words = formatted.split()
                 safe_words = int(max_tokens / 1.5)
-                m["content"] = " ".join(words[:safe_words]) + "... [TRUNCATED]"
-                trimmed.insert(0, m)
+                m_copy["content"] = " ".join(words[:safe_words]) + "... [TRUNCATED]"
+                trimmed.insert(0, m_copy)
             break
             
         trimmed.insert(0, m)

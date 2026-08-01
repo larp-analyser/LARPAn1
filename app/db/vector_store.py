@@ -264,7 +264,7 @@ class VectorMemory:
             
         return len(new_messages)
 
-    def search_similar(self, query: str, top_k: int = 5, username: str = None):
+    def search_similar(self, query: str, top_k: int = 5, username: str = None, group_name: str = None):
         """Hybrid Retrieval via Reciprocal Rank Fusion (FAISS + BM25)."""
         if not self.metadata or self.index.ntotal == 0:
             return []

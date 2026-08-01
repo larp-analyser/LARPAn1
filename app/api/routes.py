@@ -55,6 +55,8 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         
         if payload.group_name.lower() in ["defaultgroup", "discord_dm"]:
             payload.group_name = "private_chat"
+        else:
+            payload.group_name = f"{payload.platform}_{payload.group_name}"
             
         user_key = f"{payload.group_name}:{payload.username}"
         global_key = f"Global:{payload.username}"

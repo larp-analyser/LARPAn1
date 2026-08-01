@@ -239,19 +239,18 @@ class CounterRepository:
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
             
-        # Unconditionally reset count to 0 to prevent negative race conditions
-        update_op = {
-            "$set": {
-                "last_evolution": timestamp,
-                "count": 0
+        if threshold:
+            # Decrement by what was processed to preserve new messages
+            update_op = {
+                "$set": {"last_evolution": timestamp},
+                "$inc": {"count": -threshold}
             }
-        }
+        else:
+            update_op = {
+                "$set": {"last_evolution": timestamp, "count": 0}
+            }
             
-        self.collection.update_one(
-            {"_id": key},
-            update_op,
-            upsert=True
-        )
+        self.collection.update_one({"_id": key}, update_op, upsert=True)
         
     def get_sweep_candidates(self) -> list:
         pipeline = [
