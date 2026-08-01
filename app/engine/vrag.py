@@ -384,6 +384,7 @@ class VRAGEngine(BaseEngine):
             from app.db.vector_store import vector_db
             
             # 1. Pull 5 personal receipts strictly belonging to the active user
+            user_key = f"{payload.group_name}:{payload.username}"
             vector_group = user_key if is_private else payload.group_name
             
             # 1. Pull 5 personal receipts strictly belonging to the active user
