@@ -328,9 +328,11 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         try:
             vector_group = user_key if group_name == "private_chat" else group_name
             
-            latest_msg = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=1)
-            if latest_msg and latest_msg[0].get("role") == "user":
-                msg_data = latest_msg[0]
+            recent_msgs = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=2)
+            user_msg = next((m for m in reversed(recent_msgs) if m.get("role") == "user"), None)
+            
+            if user_msg:
+                msg_data = user_msg
                 await asyncio.to_thread(
                     vector_db.add_message, 
                     vector_group,

@@ -135,9 +135,16 @@ def run_teleprompter_task():
                     upsert=True
                 )
                 
-                from app.engine.vrag import combat_engine
-                combat_engine.load(temp_path)
-                logger.info("[TELEPROMPTER] Live engine dynamically updated with new weights.")
+                from app.engine.vrag import AN1CombatEngine
+                import app.engine.vrag as vrag_module
+                
+                # Load weights into a new instance to prevent active inference corruption
+                new_engine = AN1CombatEngine(load_compiled=False)
+                new_engine.load(temp_path)
+                
+                # Atomically swap the global reference safely
+                vrag_module.combat_engine = new_engine
+                logger.info("[TELEPROMPTER] Live engine dynamically swapped with new optimized weights.")
             finally:
                 # This executes EVEN IF an error occurs above, preventing the disk leak
                 if os.path.exists(temp_path):

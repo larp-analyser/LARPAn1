@@ -256,7 +256,9 @@ class VectorMemory:
         with self.db_lock:
             self.index.add(np.array(vectors))
             self.metadata.extend(batch_metadata_entries)
-            self.rolling_buffers[group_name] = batch_buffer[-2:]
+            # Only apply the historical buffer if the live buffer is currently empty
+            if group_name not in self.rolling_buffers or not self.rolling_buffers[group_name]:
+                self.rolling_buffers[group_name] = batch_buffer[-2:]
             self._rebuild_bm25()
                 
         if not skip_sync:

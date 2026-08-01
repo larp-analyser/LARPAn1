@@ -384,11 +384,12 @@ class VRAGEngine(BaseEngine):
             from app.db.vector_store import vector_db
             
             # 1. Pull 5 personal receipts strictly belonging to the active user
-            personal_matches = await asyncio.to_thread(
-                vector_db.search_similar, payload.message, top_k=10, username=payload.username
-            )
-            
             vector_group = user_key if is_private else payload.group_name
+            
+            # 1. Pull 5 personal receipts strictly belonging to the active user
+            personal_matches = await asyncio.to_thread(
+                vector_db.search_similar, payload.message, top_k=10, username=payload.username, group_name=vector_group
+            )
             
             # 2. Pull 5 global receipts from anyone in the group/server
             global_matches = await asyncio.to_thread(
