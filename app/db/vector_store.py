@@ -306,6 +306,8 @@ class VectorMemory:
             item = self.metadata[idx]
             if username and item.get("username", "").lower() != username.lower():
                 continue
+            if group_name and item.get("group_name", "") != group_name:
+                continue
                 
             results.append(item)
             if len(results) >= top_k:

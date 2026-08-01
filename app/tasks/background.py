@@ -87,7 +87,7 @@ async def vector_backfill_task():
 
         # 3. Final Upload
         if total_embedded > 0:
-            vector_db.force_sync()
+            await asyncio.to_thread(vector_db.force_sync) # <-- ADD ASYNCIO THREADING
             logger.info(f"[VECTOR_BACKFILL] Complete. Embedded {total_embedded} new historical context windows.")
         else:
             logger.info("[VECTOR_BACKFILL] No messages found to backfill.")
@@ -114,11 +114,11 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         else:
             existing_graph = await asyncio.to_thread(graph_repo.get_group_graph, entity_key)
         
-        existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", []) if isinstance(e, dict)])
+        existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", [])[-50:] if isinstance(e, dict)])
         if not existing_entities_str:
             existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
 
-        existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", []) if r.get('source') and r.get('target')])
+        existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])[-50:] if r.get('source') and r.get('target')])
         
         if is_user:
             username = entity_key.split(":", 1)[1] if ":" in entity_key else entity_key
@@ -264,8 +264,7 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
     old_summary = await asyncio.to_thread(memory_repo.get_profile, entity_key)
     
     if is_group and len(filtered_docs) < 6:
-        stub = f"New group '{entity_key}' — Understand group dynamic and log observations."
-        await asyncio.to_thread(memory_repo.update_profile, entity_key, stub)
+        await asyncio.to_thread(memory_repo.update_profile, entity_key, "[INITIALIZING]")
         logger.info(f"[BACKGROUND] Initialized group stub for {entity_key}")
         return
         

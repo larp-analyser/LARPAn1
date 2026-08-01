@@ -390,7 +390,7 @@ class VRAGEngine(BaseEngine):
             
             # 2. Pull 5 global receipts from anyone in the group/server
             global_matches = await asyncio.to_thread(
-                vector_db.search_similar, payload.message, top_k=6
+                vector_db.search_similar, payload.message, top_k=6, group_name=payload.group_name
             )
             
             # Combine and deduplicate by content/id

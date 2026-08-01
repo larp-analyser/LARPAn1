@@ -26,6 +26,7 @@ async def app_lifespan(app: FastAPI):
     MongoDB.connect()
     yield
     logger.info("Lifespan Context: Tearing down connections...")
+    MongoDB.disconnect()
 
 def custom_init(self, *args, **kwargs):
     if "lifespan" not in kwargs:

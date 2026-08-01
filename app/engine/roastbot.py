@@ -36,6 +36,7 @@ class RoastbotEngine(BaseEngine):
         self.chat_repo = ChatRepository()
         self.group_repo = GroupHistoryRepository()
         self.memory_repo = MemoryRepository()
+        self.group_memory_repo = GroupMemoryRepository()
         self.global_repo = GlobalMemoryRepository()
     
     def engine_name(self) -> str:
@@ -92,7 +93,7 @@ class RoastbotEngine(BaseEngine):
         else:
             group_history_docs = await asyncio.to_thread(self.group_repo.get_recent_history, payload.group_name, limit=settings.GROUP_HISTORY_SLICE)
             group_history_docs = trim_history_by_tokens(group_history_docs, settings.GROUP_HISTORY_TOKEN_LIMIT)
-            group_summary = await asyncio.to_thread(self.memory_repo.get_profile, payload.group_name)
+            group_summary = await asyncio.to_thread(self.group_memory_repo.get_profile, payload.group_name)
             
             llm_feed.append({"role": "system", "content": f"<roast_prompt>\n{GROUP_ROAST_PROMPT}\n</roast_prompt>"})
             
