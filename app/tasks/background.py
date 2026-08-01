@@ -30,14 +30,8 @@ from app.prompts.dspy_signatures import GraphExtractionSignature
 
 logger = logging.getLogger(__name__)
 
-evolution_locks = {}
-evolution_locks_lock = threading.Lock()
-
-def get_entity_lock(entity_key: str):
-    with evolution_locks_lock:
-        if entity_key not in evolution_locks:
-            evolution_locks[entity_key] = threading.Lock()
-        return evolution_locks[entity_key]
+_processing_entities = set()
+_processing_lock = threading.Lock()
         
 async def vector_backfill_task():
     """Scans all chat histories and bulk-embeds missing messages into the Vector database using sliding windows."""
@@ -96,11 +90,11 @@ async def vector_backfill_task():
         logger.error(f"[VECTOR_BACKFILL] Error during backfill: {e}")
 
 async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRepository, is_user: bool = True):
-    lock = get_entity_lock(entity_key)
-    if not lock.acquire(blocking=False):
-        logger.info(f"[BACKGROUND] Evolution already in progress for {entity_key}. Skipping to prevent data loss.")
-        return
- 
+    with _processing_lock:
+        if entity_key in _processing_entities:
+            logger.info(f"[BACKGROUND] Evolution already in progress for {entity_key}. Skipping to prevent data loss.")
+            return
+        _processing_entities.add(entity_key)
     try:        
         if not history_docs:
             return
@@ -195,7 +189,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 rel_tuple = (rel.source, rel.target)
                 if rel_tuple in seen_rels:
                     idx = seen_rels[rel_tuple]
-                    existing_rels[idx]["intensity"] = round((existing_rels[idx]["intensity"] + float(rel.intensity)) / 2, 2)
+                    old_intensity = float(existing_rels[idx].get("intensity", 5.0))
+                    existing_rels[idx]["intensity"] = round((old_intensity + float(rel.intensity)) / 2, 2)
                     
                     combined = [r.strip() for r in existing_rels[idx]["relation"].split("|") if r.strip()]
                     for r_item in rel.relation.split("|"):
@@ -247,7 +242,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 else:
                     await asyncio.to_thread(graph_repo.update_group_graph, entity_key, stub_graph)
     finally:
-        lock.release()   
+        with _processing_lock:
+            _processing_entities.discard(entity_key)  
 
 async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo, is_global: bool = False, is_group: bool = False):
     if is_group:
@@ -338,7 +334,9 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
                 await asyncio.to_thread(
                     vector_db.add_message, 
                     vector_group,
-                    msg_data.get("username", "Unknown"),
+                    msg_data.get("username", "Unknown"), 
+                    msg_data.get("content", ""), 
+                    msg_data.get("timestamp", datetime.now(timezone.utc).isoformat())
                 )
         except Exception as e:
             logger.error(f"[BACKGROUND] Failed to ingest live vector message: {e}")
