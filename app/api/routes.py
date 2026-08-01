@@ -53,7 +53,7 @@ async def process_message(payload: IncomingPayload, background_tasks: Background
         # Sanitize only bot mentions, preserve all other raw IDs
         payload.message = normalize_bot_mentions(payload.message)
         
-        if payload.group_name.lower() in ["defaultgroup", "discord_dm"]:
+        if payload.group_name.lower() in ["defaultgroup", "personal", "private"] or payload.group_name.lower().endswith("_dm"):
             payload.group_name = "private_chat"
         else:
             payload.group_name = f"{payload.platform}_{payload.group_name}"
