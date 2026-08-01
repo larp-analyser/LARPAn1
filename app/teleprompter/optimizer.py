@@ -48,6 +48,12 @@ def run_teleprompter_task():
         
         # 3. Define Metric (Now 1:1 synced with VRAG penalty loops)
         def combat_metric(example, pred, trace=None):
+            if not pred.reply or str(pred.reply) == "None":
+                # If it's a reaction only, ensure a valid emoji was actually provided
+                if not pred.reaction or str(pred.reaction) == "None":
+                    return 0.0
+                return 1.0 # Valid reaction-only pass
+                
             reply_text = str(pred.reply)
             
             # Constraint 1: Verbosity
