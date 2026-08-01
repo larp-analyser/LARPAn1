@@ -43,7 +43,9 @@ def run_teleprompter_task():
                 location=log["location"]
             ).with_inputs('history', 'graph', 'user', 'message', 'location')
             trainset.append(example)
-            
+        
+        auditor = dspy.Predict(SelfInsultPreventionSignature)
+        
         # 3. Define Metric (Now 1:1 synced with VRAG penalty loops)
         def combat_metric(example, pred, trace=None):
             reply_text = str(pred.reply)
@@ -94,8 +96,7 @@ def run_teleprompter_task():
             if re.search(r'\b(maybe you should|try to|it[\'’]?s time to|grow up|do yourself a favor|re-evaluate|reconsider|take a break|seek help)\b', reply_text, re.IGNORECASE):
                 return 0.0
                 
-            # Teacher model safety audit
-            auditor = dspy.Predict(SelfInsultPreventionSignature)
+                
             res = auditor(active_message=example.message, proposed_reply=reply_text)
             if res.audit.is_self_roast:
                 return 0.0

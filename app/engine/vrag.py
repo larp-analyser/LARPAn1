@@ -367,7 +367,7 @@ class VRAGEngine(BaseEngine):
         user_graph = await asyncio.to_thread(self.graph_repo.get_user_graph, user_key)
         group_graph = await asyncio.to_thread(self.graph_repo.get_group_graph, payload.group_name)
         
-        return build_networkx_context(payload.username, user_graph, group_graph)
+        return await asyncio.to_thread(build_networkx_context, payload.username, user_graph, group_graph)
         
     async def process(self, payload: IncomingPayload) -> EngineResponse:
         is_private = (payload.group_name == "private_chat")

@@ -188,6 +188,11 @@ class VectorMemory:
             if group_name not in self.rolling_buffers:
                 self.rolling_buffers[group_name] = []
             buffer_copy = list(self.rolling_buffers[group_name])
+            
+            # ADVANCE THE BUFFER IMMEDIATELY TO PREVENT RACE CONDITIONS
+            self.rolling_buffers[group_name].append({"username": username, "content": content})
+            if len(self.rolling_buffers[group_name]) > 2:
+                self.rolling_buffers[group_name].pop(0)
 
         window_text = self._build_context_window(buffer_copy, username, content)
         
@@ -197,18 +202,13 @@ class VectorMemory:
         with self.db_lock:
             self.index.add(np.array([vector]))
             self.metadata.append({
-                "group_name": group_name, # FIXED: Save group_name to metadata
+                "group_name": group_name, 
                 "username": username,
                 "content": content,
                 "timestamp": timestamp,
                 "window_text": window_text
             })
             self.seen_hashes.add(msg_hash)
-            
-            self.rolling_buffers[group_name].append({"username": username, "content": content})
-            if len(self.rolling_buffers[group_name]) > 2:
-                self.rolling_buffers[group_name].pop(0)
-                
             self._rebuild_bm25()
             
         self._schedule_sync()

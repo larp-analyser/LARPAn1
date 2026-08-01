@@ -1,6 +1,7 @@
 from app.db.mongo import MongoDB
 from datetime import datetime, timezone
 import time
+import copy
 import threading
 from app.core.config import settings
 from pymongo import ReturnDocument
@@ -30,7 +31,7 @@ class TTLCache:
             if key in self.cache:
                 entry = self.cache[key]
                 if time.time() - entry['time'] < self.ttl:
-                    return entry['value']
+                    return copy.deepcopy(entry['value']) # <-- Deepcopy here
                 else:
                     del self.cache[key]
             return None

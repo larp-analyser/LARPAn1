@@ -1,6 +1,7 @@
 import threading
 import logging
 import dspy
+import time
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,7 @@ class ModularRoundRobinPool:
                 if any(trigger in error_str for trigger in retry_triggers):
                     attempts += 1
                     logger.warning(f"[{self.pool_name}] Rate limit or transient error on active model! Advancing instance ({attempts}/{max_attempts}).")
+                    time.sleep(1.5 ** attempts) # <-- Add exponential backoff
                 else:
                     raise e
 
