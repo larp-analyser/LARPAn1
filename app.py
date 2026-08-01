@@ -7,9 +7,6 @@ import spaces
 from app.api.routes import router
 from app.db.mongo import MongoDB
 
-# Connects Mongo and starts the keepalive thread immediately when the app imports
-MongoDB.connect()
-
 original_init = FastAPI.__init__
 
 @asynccontextmanager
