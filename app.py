@@ -3,6 +3,7 @@ import gradio as gr
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import spaces
+import logging
 
 from app.api.routes import router
 from app.db.mongo import MongoDB
