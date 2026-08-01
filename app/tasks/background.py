@@ -116,7 +116,7 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         
         existing_entities_str = ", ".join([e.get("id", "") for e in existing_graph.get("entities", [])[-50:] if isinstance(e, dict)])
         if not existing_entities_str:
-            existing_entities_str = ", ".join([e for e in existing_graph.get("entities", []) if isinstance(e, str)])
+            existing_entities_str = ", ".join([e for e in existing_graph.get("entities", [])[-50:] if isinstance(e, str)])
 
         existing_rels_str = ", ".join([f"{r.get('source', '')} {r.get('relation', '')} {r.get('target', '')} (Intensity: {r.get('intensity', 5.0)})" for r in existing_graph.get("relationships", [])[-50:] if r.get('source') and r.get('target')])
         
@@ -330,15 +330,15 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
         
         # 1. LIVE VECTOR INGESTION: Grab the message the user literally just sent and embed it
         try:
+            vector_group = user_key if group_name == "private_chat" else group_name
+            
             latest_msg = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=1)
             if latest_msg and latest_msg[0].get("role") == "user":
                 msg_data = latest_msg[0]
                 await asyncio.to_thread(
                     vector_db.add_message, 
-                    group_name,
-                    msg_data.get("username", "Unknown"), 
-                    msg_data.get("content", ""), 
-                    msg_data.get("timestamp", datetime.now(timezone.utc).isoformat())
+                    vector_group,
+                    msg_data.get("username", "Unknown"),
                 )
         except Exception as e:
             logger.error(f"[BACKGROUND] Failed to ingest live vector message: {e}")

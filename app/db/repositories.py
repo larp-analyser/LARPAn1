@@ -194,7 +194,7 @@ class GraphRepository:
         doc = self.users.find_one({"_id": user_key})
         val = doc.get("graph_data", {"entities": [], "relationships": []}) if doc else {"entities": [], "relationships": []}
         _graph_cache.set(user_key, val)
-        return val
+        return copy.deepcopy(val)
 
     def update_user_graph(self, user_key: str, graph_data: dict):
         self.users.update_one(
@@ -212,7 +212,7 @@ class GraphRepository:
         doc = self.groups.find_one({"_id": group_name})
         val = doc.get("graph_data", {"entities": [], "relationships": []}) if doc else {"entities": [], "relationships": []}
         _graph_cache.set(f"group_{group_name}", val)
-        return val
+        return copy.deepcopy(val)
 
     def update_group_graph(self, group_name: str, graph_data: dict):
         self.groups.update_one(

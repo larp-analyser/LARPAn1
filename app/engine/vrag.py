@@ -388,9 +388,11 @@ class VRAGEngine(BaseEngine):
                 vector_db.search_similar, payload.message, top_k=10, username=payload.username
             )
             
+            vector_group = user_key if is_private else payload.group_name
+            
             # 2. Pull 5 global receipts from anyone in the group/server
             global_matches = await asyncio.to_thread(
-                vector_db.search_similar, payload.message, top_k=6, group_name=payload.group_name
+                vector_db.search_similar, payload.message, top_k=6, group_name=vector_group
             )
             
             # Combine and deduplicate by content/id
