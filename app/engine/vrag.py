@@ -102,33 +102,6 @@ class AN1CombatEngine(dspy.Module):
                 safety_trace += "| Verbosity Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
-            
-            internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|ur|u|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
-            brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|periodt)"
-            corporate_and_therapy = r"(bandwidth|unpack|gaslight|gaslighting|problematic|synergy|mindset|journey|navigate|align|toxic|narcissist|narcissistic|trigger|triggered|trauma|boundaries|validate|validation|projecting|projection|leverage|pivot|holistic|paradigm|ideate|empower)"
-            vocal_pauses = r"(uh|um|er|hmm|huh|oof|yikes|pfft|psh|ugh|welp|meh|haha|hehe|xd|kek|aww|oop|tsk|geez|jeez|dang|heck|yay|whoops)"
-            weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|kiddo|bucko|pal|yall)"
-            hedge_words = r"(kinda|sorta)"
-            observed_filler = r"(says|vibe|vibing|vibed|relevant|words|sentences)"
-            
-            filler_pattern = re.compile(
-                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{hedge_words}|{observed_filler})\b", 
-                re.IGNORECASE
-            )
-            
-            if filler_pattern.search(reply_text):
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for using internet slang, therapy-speak, or nervous filler. "
-                    "You must behave like a normal sane person who is educated in what to speak when to speak and how to speak."
-                    "1. NO INTERNET SLANG OR TRENDS: Do not use brainrot, fleeting internet buzzwords, or memes. "
-                    "2. NO CORPORATE/THERAPY SPEAK: Speak naturally, without academic padding, armchair psychology, or HR buzzwords. "
-                    "3. NOT A STRICT DAD: Do not moralize, lecture, or sound like a disappointed father scolding a child. "
-                    "Insult with grounded clarity, in normal daily english."
-                )
-                logger.warning("Max-Expanded Persona/Filler filter triggered. Penalty applied.")
-                safety_trace += "| Next-Level Persona Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
                 
             elif re.search(r'[\n\r=—–~#*>]|--|\.\.\.|…', reply_text):
                 penalty = (
@@ -151,19 +124,6 @@ class AN1CombatEngine(dspy.Module):
                 )
                 logger.warning("Cinematic Narrator / Fragmentation violation detected. Penalty applied.")
                 safety_trace += "| Narrator Trope Penalty "
-                current_constraints = f"{current_constraints}\n{penalty}"
-                needs_retry = True
-            
-            elif re.search(r'\?|\"|\b(imagine|ah yes|oh look|it[\'’]?s funny how|the fact that|speaks volumes|try harder|do better|next|make it make sense|let that sink in)\b', reply_text, re.IGNORECASE):
-                penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for using lazy AI tropes or rhetorical questions. "
-                    "1. NO QUESTIONS: A roast is a definitive statement of fact. Do not use question marks. "
-                    "2. NO SARCASTIC QUOTES: Do not use quotation marks to imply sarcasm. "
-                    "3. NO CLICHE FRAMING: Never use phrases like 'Imagine thinking', 'Ah yes', 'It's funny how', or 'Try harder'. "
-                    "State the brutal truth directly. Start the sentence immediately with your observation."
-                )
-                logger.warning("LLM Cliche / Rhetorical Trope violation detected. Penalty applied.")
-                safety_trace += "| Cliche Trope Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
 
