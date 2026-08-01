@@ -114,16 +114,29 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
     context_lines.append(f"SOCIAL RANK (PageRank): {target_score:.4f} ({social_status})")
     context_lines.append(f"DETECTED FACTION / ALLIES: {faction_str}")
     
-    edges_dict = { (u, v): d for u, v, d in G.in_edges(username, data=True) }
-    edges_dict.update({ (u, v): d for u, v, d in G.out_edges(username, data=True) })
-    edges = [ (u, v, d) for (u, v), d in edges_dict.items() ]
+    # Extract 2-Hop Subgraph using NetworkX ego_graph
+    # radius=2 extracts the user + direct neighbors + neighbors of neighbors
+    if username in G:
+        ego_G = nx.ego_graph(G, username, radius=2, center=True)
+        edges = [(u, v, d) for u, v, d in ego_G.edges(data=True)]
+    else:
+        edges = []
     
     if edges:
-        context_lines.append("\nACTIVE RELATIONSHIPS (Weighted by Time/Decay):")
+        context_lines.append("\nEXPANDED NETWORK RELATIONSHIPS (2-Hop Depth, Decay-Weighted):")
+        # Sort edges by time-decayed weight
         edges.sort(key=lambda x: x[2].get('weight', 0), reverse=True)
-        for source, target, data in edges[:10]:
+        
+        # INCREASED CAP: Top 25 most relevant relationships (up from 10)
+        for source, target, data in edges[:25]:
             w = data.get('weight', 0)
             status = "[FADING]" if w < 2.0 else "[ACTIVE]"
-            context_lines.append(f"- {status} {source} [{data['relation']}] {target} (Relevance: {w:.1f})")
+            
+            # Tag whether it is a direct (1-hop) or indirect (2-hop) connection
+            hop_tag = "[DIRECT]" if (source == username or target == username) else "[INDIRECT]"
+            
+            context_lines.append(
+                f"- {status} {hop_tag} {source} [{data.get('relation', 'connected')}] {target} (Relevance: {w:.1f})"
+            )
             
     return "\n".join(context_lines)

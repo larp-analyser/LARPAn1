@@ -5,7 +5,7 @@ import dspy
 from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.llm_balancer import background_pool
-from app.core.utils import sanitize_think_tags
+from app.core.utils import sanitize_think_tags, trim_history_by_tokens
 
 from app.db.vector_store import vector_db
 
@@ -70,7 +70,6 @@ async def vector_backfill_task():
         # 2. Backfill DMs (Private chats are stored in chat_repo, not group_repo)
         all_dms = await asyncio.to_thread(lambda: list(chat_repo.collection.find({"_id": {"$regex": "^private_chat:"}})))
         for doc in all_dms:
-            # For DMs, the group_name effectively acts as the isolated channel
             group_name = doc["_id"] 
             messages_to_embed = []
             
@@ -106,7 +105,9 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
         if not history_docs:
             return
             
-        history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history_docs])
+        token_limit = settings.MAX_HISTORY_TOKENS if is_user else settings.GROUP_HISTORY_TOKEN_LIMIT
+        trimmed_docs = trim_history_by_tokens(history_docs, token_limit)
+        history_str = "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in trimmed_docs])
 
         if is_user:
             existing_graph = await asyncio.to_thread(graph_repo.get_user_graph, entity_key)
@@ -170,48 +171,46 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
                 if new_ent.id in existing_entities_dict:
                     existing_attrs = existing_entities_dict[new_ent.id].get("attributes", "")
                     if new_ent.attributes and new_ent.attributes not in existing_attrs:
-                        # Break apart, deduplicate, and keep only the latest 5 traits
                         combined = [a.strip() for a in existing_attrs.split("|") if a.strip()]
-                        if new_ent.attributes not in combined:
-                            combined.append(new_ent.attributes)
+                        for attr_item in new_ent.attributes.split("|"):
+                            clean_item = attr_item.strip()
+                            if clean_item and clean_item not in combined:
+                                combined.append(clean_item)
                         
                         existing_entities_dict[new_ent.id]["attributes"] = " | ".join(combined[-5:])
                 else:
+                    init_attrs = [a.strip() for a in (new_ent.attributes or "").split("|") if a.strip()]
                     existing_entities_dict[new_ent.id] = {
                         "id": new_ent.id,
                         "type": new_ent.type,
-                        "attributes": new_ent.attributes
+                        "attributes": " | ".join(init_attrs[-5:]) if init_attrs else "Unknown"
                     }
             
             merged_entities = list(existing_entities_dict.values())
             existing_rels = existing_graph.get("relationships", [])
             
-            # Group relationships strictly by source and target
             seen_rels = {(r.get("source"), r.get("target")): i for i, r in enumerate(existing_rels) if r.get("source") and r.get("target")}
             
             for rel in new_graph_data.relationships:
                 rel_tuple = (rel.source, rel.target)
                 if rel_tuple in seen_rels:
                     idx = seen_rels[rel_tuple]
-                    # Calculate a moving average for intensity to track historical beef
                     existing_rels[idx]["intensity"] = round((existing_rels[idx]["intensity"] + float(rel.intensity)) / 2, 2)
                     
-                    # Append the new relationship description if it is distinct
-                    # Split, deduplicate, and keep ONLY the latest 5 relationship descriptors
                     combined = [r.strip() for r in existing_rels[idx]["relation"].split("|") if r.strip()]
-                    if rel.relation not in combined:
-                        combined.append(rel.relation)
+                    for r_item in rel.relation.split("|"):
+                        clean_r = r_item.strip()
+                        if clean_r and clean_r not in combined:
+                            combined.append(clean_r)
                     
-                    # Cap it at 5 to prevent infinite string bloat
                     existing_rels[idx]["relation"] = " | ".join(combined[-5:])
-                        
-                    # Stamp exactly when this edge was last reinforced
                     existing_rels[idx]["last_seen"] = datetime.now(timezone.utc).isoformat()
                 else:
                     seen_rels[rel_tuple] = len(existing_rels)
+                    rel_items = [r.strip() for r in (rel.relation or "").split("|") if r.strip()]
                     existing_rels.append({
                         "source": rel.source, 
-                        "relation": rel.relation, 
+                        "relation": " | ".join(rel_items[-5:]), 
                         "target": rel.target,
                         "intensity": float(rel.intensity),
                         "last_seen": datetime.now(timezone.utc).isoformat()
@@ -235,11 +234,8 @@ async def _evolve_graph(entity_key: str, history_docs: list, graph_repo: GraphRe
             is_only_stub = len(entities) == 1 and isinstance(entities[0], dict) and entities[0].get("attributes") == "Initializing..."
             
             if is_only_stub:
-                # FIXED: Do not overwrite the database. Leave the "Initializing..." stub exactly as it is.
-                # This ensures the hourly_sweep_task will automatically try to profile them again later.
                 logger.warning(f"[BACKGROUND] Extraction failed for {entity_key}. Leaving 'Initializing...' stub intact for next sweep.")
             elif is_empty:
-                # Only inject the failure stub if the graph was completely empty to begin with
                 logger.warning(f"[BACKGROUND] Empty vRAG extraction for {entity_key}. Injecting empty fallback.")
                 stub_graph = {
                     "entities": [{"id": "System", "type": "Metadata", "attributes": "Initialized without entities."}],
@@ -261,6 +257,9 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         
     if not filtered_docs:
         return
+        
+    token_limit = settings.GROUP_HISTORY_TOKEN_LIMIT if is_group else settings.MAX_HISTORY_TOKENS
+    filtered_docs = trim_history_by_tokens(filtered_docs, token_limit)
         
     old_summary = await asyncio.to_thread(memory_repo.get_profile, entity_key)
     
@@ -324,187 +323,191 @@ async def _evolve_text_profile(entity_key: str, history_docs: list, memory_repo,
         logger.warning(f"[BACKGROUND] Failed to generate profile for {entity_key}.")
         if not old_summary:
             logger.warning(f"[BACKGROUND] Injecting fallback profile stub for {entity_key}.")
-            await asyncio.to_thread(memory_repo.update_profile, entity_key, "Insufficient data for initial profile.")
-
+            await asyncio.to_thread(memory_repo.update_profile, entity_key, "[INITIALIZING]")
 
 async def evolve_profile_task(user_key: str, group_name: str, global_key: str, mode: str):
-    chat_repo = ChatRepository()
-    
-    # 1. LIVE VECTOR INGESTION: Grab the message the user literally just sent and embed it
     try:
-        latest_msg = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=1)
-        if latest_msg and latest_msg[0].get("role") == "user":
-            msg_data = latest_msg[0]
-            await asyncio.to_thread(
-                vector_db.add_message, 
-                group_name, # <--- NEW PARAMETER ADDED HERE
-                msg_data.get("username", "Unknown"), 
-                msg_data.get("content", ""), 
-                msg_data.get("timestamp", datetime.now(timezone.utc).isoformat())
-            )
+        chat_repo = ChatRepository()
+        
+        # 1. LIVE VECTOR INGESTION: Grab the message the user literally just sent and embed it
+        try:
+            latest_msg = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=1)
+            if latest_msg and latest_msg[0].get("role") == "user":
+                msg_data = latest_msg[0]
+                await asyncio.to_thread(
+                    vector_db.add_message, 
+                    group_name,
+                    msg_data.get("username", "Unknown"), 
+                    msg_data.get("content", ""), 
+                    msg_data.get("timestamp", datetime.now(timezone.utc).isoformat())
+                )
+        except Exception as e:
+            logger.error(f"[BACKGROUND] Failed to ingest live vector message: {e}")
+            
+        group_repo = GroupHistoryRepository()
+        global_history_repo = GlobalHistoryRepository()
+        counter_repo = CounterRepository()
+        
+        if mode in ["vrag", "auto"]:
+            user_count = counter_repo.record_activity(f"vrag:{user_key}")
+            graph_repo = GraphRepository()
+            
+            existing_user_graph = await asyncio.to_thread(graph_repo.get_user_graph, user_key)
+            is_first_contact = not existing_user_graph.get("entities") and not existing_user_graph.get("relationships")
+            
+            if is_first_contact:
+                logger.info(f"[BACKGROUND] First Contact Graph Extraction triggered for {user_key}")
+                await asyncio.to_thread(graph_repo.update_user_graph, user_key, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
+                user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
+            elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
+                logger.info(f"[BACKGROUND] Evolution Graph Extraction triggered for {user_key} (count={user_count})")
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
+                user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
+            
+            if group_name != "private_chat":
+                group_count = counter_repo.record_activity(f"vrag_group:{group_name}")
+                existing_group_graph = await asyncio.to_thread(graph_repo.get_group_graph, group_name)
+                is_group_first_contact = not existing_group_graph.get("entities") and not existing_group_graph.get("relationships")
+                
+                if is_group_first_contact and group_count == 10:
+                    logger.info(f"[BACKGROUND] vRAG Group First Contact triggered for {group_name}")
+                    await asyncio.to_thread(graph_repo.update_group_graph, group_name, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
+                    evolution_time = datetime.now(timezone.utc)
+                    counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
+                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
+                    await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
+                elif group_count == settings.GROUP_SUMMARY_EVERY_N:
+                    logger.info(f"[BACKGROUND] vRAG Group Summary triggered for {group_name} (count={group_count})")
+                    evolution_time = datetime.now(timezone.utc)
+                    counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
+                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
+                    await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
+                
+        else:
+            memory_repo = MemoryRepository()
+            group_memory_repo = GroupMemoryRepository()
+            global_memory_repo = GlobalMemoryRepository()
+            
+            user_count = counter_repo.record_activity(f"rb:{user_key}")
+            existing_user_profile = await asyncio.to_thread(memory_repo.get_profile, user_key)
+            
+            if existing_user_profile is None or existing_user_profile == "":
+                await asyncio.to_thread(memory_repo.update_profile, user_key, "[INITIALIZING]")
+                logger.info(f"[BACKGROUND] First Contact triggered for {user_key}")
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
+                user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
+            elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
+                logger.info(f"[BACKGROUND] Evolution triggered for {user_key} (count={user_count})")
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
+                user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
+            
+            if group_name != "private_chat":
+                group_count = counter_repo.record_activity(f"rb_group:{group_name}")
+                existing_group_profile = await asyncio.to_thread(group_memory_repo.get_profile, group_name)
+                
+                if existing_group_profile is None or existing_group_profile == "":
+                    if group_count == 10:
+                        await asyncio.to_thread(group_memory_repo.update_profile, group_name, "[INITIALIZING]")
+                        logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
+                        evolution_time = datetime.now(timezone.utc)
+                        counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time, threshold=group_count)
+                        group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
+                        await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
+                elif group_count == settings.GROUP_SUMMARY_EVERY_N:
+                    logger.info(f"[BACKGROUND] Group Summary triggered for {group_name} (count={group_count})")
+                    evolution_time = datetime.now(timezone.utc)
+                    counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time)
+                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
+                    await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
+            
+            global_count = counter_repo.record_activity(f"rb_global:{global_key}")
+            existing_global_profile = await asyncio.to_thread(global_memory_repo.get_profile, global_key)
+            
+            if existing_global_profile is None or existing_global_profile == "":
+                await asyncio.to_thread(global_memory_repo.update_profile, global_key, "[INITIALIZING]")
+                logger.info(f"[BACKGROUND] Global First Contact triggered for {global_key}")
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
+                global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
+                await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
+            elif global_count == settings.EVOLVE_EVERY_N_MESSAGES:
+                logger.info(f"[BACKGROUND] Global Evolution triggered for {global_key} (count={global_count})")
+                evolution_time = datetime.now(timezone.utc)
+                counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
+                global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
+                await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
     except Exception as e:
-        logger.error(f"[BACKGROUND] Failed to ingest live vector message: {e}")
+        logger.exception(f"[BACKGROUND FATAL] Unhandled exception in profile evolution for {user_key}: {e}")
+
+async def hourly_sweep_task():
+    try:
+        counter_repo = CounterRepository()
+        chat_repo = ChatRepository()
+        group_repo = GroupHistoryRepository()
+        global_history_repo = GlobalHistoryRepository()
         
-    group_repo = GroupHistoryRepository()
-    global_history_repo = GlobalHistoryRepository()
-    counter_repo = CounterRepository()
-    
-    if mode in ["vrag", "auto"]:
-        user_count = counter_repo.record_activity(f"vrag:{user_key}")
         graph_repo = GraphRepository()
-        
-        existing_user_graph = await asyncio.to_thread(graph_repo.get_user_graph, user_key)
-        is_first_contact = not existing_user_graph.get("entities") and not existing_user_graph.get("relationships")
-        
-        if is_first_contact:
-            logger.info(f"[BACKGROUND] First Contact Graph Extraction triggered for {user_key}")
-            await asyncio.to_thread(graph_repo.update_user_graph, user_key, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
-            user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-            await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
-        elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
-            logger.info(f"[BACKGROUND] Evolution Graph Extraction triggered for {user_key} (count={user_count})")
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"vrag:{user_key}", timestamp=evolution_time, threshold=user_count)
-            user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-            await _evolve_graph(user_key, user_history, graph_repo, is_user=True)
-        
-        if group_name != "private_chat":
-            group_count = counter_repo.record_activity(f"vrag_group:{group_name}")
-            existing_group_graph = await asyncio.to_thread(graph_repo.get_group_graph, group_name)
-            is_group_first_contact = not existing_group_graph.get("entities") and not existing_group_graph.get("relationships")
-            
-            if is_group_first_contact and group_count == 10:
-                logger.info(f"[BACKGROUND] vRAG Group First Contact triggered for {group_name}")
-                await asyncio.to_thread(graph_repo.update_group_graph, group_name, {"entities": [{"id": "System", "type": "Metadata", "attributes": "Initializing..."}], "relationships": []})
-                evolution_time = datetime.now(timezone.utc)
-                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
-                group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
-                await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
-            elif group_count == settings.GROUP_SUMMARY_EVERY_N:
-                logger.info(f"[BACKGROUND] vRAG Group Summary triggered for {group_name} (count={group_count})")
-                evolution_time = datetime.now(timezone.utc)
-                counter_repo.record_evolution(f"vrag_group:{group_name}", timestamp=evolution_time, threshold=group_count)
-                group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                await _evolve_graph(group_name, group_history, graph_repo, is_user=False)
-            
-    else:
         memory_repo = MemoryRepository()
         group_memory_repo = GroupMemoryRepository()
         global_memory_repo = GlobalMemoryRepository()
-        
-        user_count = counter_repo.record_activity(f"rb:{user_key}")
-        existing_user_profile = await asyncio.to_thread(memory_repo.get_profile, user_key)
-        
-        if existing_user_profile is None or existing_user_profile == "":
-            await asyncio.to_thread(memory_repo.update_profile, user_key, "[INITIALIZING]")
-            logger.info(f"[BACKGROUND] First Contact triggered for {user_key}")
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
-            user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-            await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
-        elif user_count == settings.EVOLVE_EVERY_N_MESSAGES:
-            logger.info(f"[BACKGROUND] Evolution triggered for {user_key} (count={user_count})")
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb:{user_key}", timestamp=evolution_time, threshold=user_count)
-            user_history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-            await _evolve_text_profile(user_key, user_history, memory_repo, is_global=False)
-        
-        if group_name != "private_chat":
-            group_count = counter_repo.record_activity(f"rb_group:{group_name}")
-            existing_group_profile = await asyncio.to_thread(group_memory_repo.get_profile, group_name)
-            
-            if existing_group_profile is None or existing_group_profile == "":
-                if group_count == 10:
-                    await asyncio.to_thread(group_memory_repo.update_profile, group_name, "[INITIALIZING]")
-                    logger.info(f"[BACKGROUND] Group First Contact triggered for {group_name}")
-                    evolution_time = datetime.now(timezone.utc)
-                    counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time, threshold=group_count)
-                    group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=30)
-                    await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
-            elif group_count == settings.GROUP_SUMMARY_EVERY_N:
-                logger.info(f"[BACKGROUND] Group Summary triggered for {group_name} (count={group_count})")
-                evolution_time = datetime.now(timezone.utc)
-                counter_repo.record_evolution(f"rb_group:{group_name}", timestamp=evolution_time)
-                group_history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                await _evolve_text_profile(group_name, group_history, group_memory_repo, is_global=False, is_group=True)
-        
-        global_count = counter_repo.record_activity(f"rb_global:{global_key}")
-        existing_global_profile = await asyncio.to_thread(global_memory_repo.get_profile, global_key)
-        
-        if existing_global_profile is None or existing_global_profile == "":
-            await asyncio.to_thread(global_memory_repo.update_profile, global_key, "[INITIALIZING]")
-            logger.info(f"[BACKGROUND] Global First Contact triggered for {global_key}")
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
-            global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
-            await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
-        elif global_count == settings.EVOLVE_EVERY_N_MESSAGES:
-            logger.info(f"[BACKGROUND] Global Evolution triggered for {global_key} (count={global_count})")
-            evolution_time = datetime.now(timezone.utc)
-            counter_repo.record_evolution(f"rb_global:{global_key}", timestamp=evolution_time, threshold=global_count)
-            global_history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
-            await _evolve_text_profile(global_key, global_history, global_memory_repo, is_global=True)
 
-async def hourly_sweep_task():
-    counter_repo = CounterRepository()
-    chat_repo = ChatRepository()
-    group_repo = GroupHistoryRepository()
-    global_history_repo = GlobalHistoryRepository()
-    
-    graph_repo = GraphRepository()
-    memory_repo = MemoryRepository()
-    group_memory_repo = GroupMemoryRepository()
-    global_memory_repo = GlobalMemoryRepository()
+        candidates = await asyncio.to_thread(counter_repo.get_sweep_candidates)
+        logger.info(f"[SWEEP] Found {len(candidates)} candidates for time-based evolution.")
+        
+        semaphore = asyncio.Semaphore(5)
 
-    candidates = await asyncio.to_thread(counter_repo.get_sweep_candidates)
-    logger.info(f"[SWEEP] Found {len(candidates)} candidates for time-based evolution.")
-    
-    # FIXED: Process up to 5 candidate evolutions concurrently
-    semaphore = asyncio.Semaphore(5)
+        async def process_candidate(candidate):
+            async with semaphore:
+                key = candidate["_id"]
+                try:
+                    sweep_time = datetime.now(timezone.utc)
+                    if key.startswith("vrag:"):
+                        user_key = key.split("vrag:", 1)[1]
+                        logger.info(f"[SWEEP] Evolving vRAG User {user_key}")
+                        history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                        await _evolve_graph(user_key, history, graph_repo, is_user=True)
+                        counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
+                        
+                    elif key.startswith("vrag_group:"):
+                        group_name = key.split("vrag_group:", 1)[1]
+                        logger.info(f"[SWEEP] Evolving vRAG Group {group_name}")
+                        history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
+                        await _evolve_graph(group_name, history, graph_repo, is_user=False)
+                        counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
+                        
+                    elif key.startswith("rb:"):
+                        user_key = key.split("rb:", 1)[1]
+                        logger.info(f"[SWEEP] Evolving Legacy User {user_key}")
+                        history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
+                        await _evolve_text_profile(user_key, history, memory_repo, is_global=False)
+                        counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
+                        
+                    elif key.startswith("rb_group:"):
+                        group_name = key.split("rb_group:", 1)[1]
+                        logger.info(f"[SWEEP] Evolving Legacy Group {group_name}")
+                        history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
+                        await _evolve_text_profile(group_name, history, group_memory_repo, is_global=False, is_group=True)
+                        counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
+                        
+                    elif key.startswith("rb_global:"):
+                        global_key = key.split("rb_global:", 1)[1]
+                        logger.info(f"[SWEEP] Evolving Legacy Global {global_key}")
+                        history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
+                        await _evolve_text_profile(global_key, history, global_memory_repo, is_global=True)
+                        counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
+                except Exception as e:
+                    logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
 
-    async def process_candidate(candidate):
-        async with semaphore:
-            key = candidate["_id"]
-            try:
-                sweep_time = datetime.now(timezone.utc)
-                if key.startswith("vrag:"):
-                    user_key = key.split("vrag:", 1)[1]
-                    logger.info(f"[SWEEP] Evolving vRAG User {user_key}")
-                    history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-                    await _evolve_graph(user_key, history, graph_repo, is_user=True)
-                    counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
-                    
-                elif key.startswith("vrag_group:"):
-                    group_name = key.split("vrag_group:", 1)[1]
-                    logger.info(f"[SWEEP] Evolving vRAG Group {group_name}")
-                    history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                    await _evolve_graph(group_name, history, graph_repo, is_user=False)
-                    counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
-                    
-                elif key.startswith("rb:"):
-                    user_key = key.split("rb:", 1)[1]
-                    logger.info(f"[SWEEP] Evolving Legacy User {user_key}")
-                    history = await asyncio.to_thread(chat_repo.get_recent_history, user_key, limit=30)
-                    await _evolve_text_profile(user_key, history, memory_repo, is_global=False)
-                    counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
-                    
-                elif key.startswith("rb_group:"):
-                    group_name = key.split("rb_group:", 1)[1]
-                    logger.info(f"[SWEEP] Evolving Legacy Group {group_name}")
-                    history = await asyncio.to_thread(group_repo.get_recent_history, group_name, limit=80)
-                    await _evolve_text_profile(group_name, history, group_memory_repo, is_global=False, is_group=True)
-                    counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
-                    
-                elif key.startswith("rb_global:"):
-                    global_key = key.split("rb_global:", 1)[1]
-                    logger.info(f"[SWEEP] Evolving Legacy Global {global_key}")
-                    history = await asyncio.to_thread(global_history_repo.get_recent_history, global_key, limit=50)
-                    await _evolve_text_profile(global_key, history, global_memory_repo, is_global=True)
-                    counter_repo.record_evolution(key, timestamp=sweep_time, threshold=candidate.get("count", 0))
-            except Exception as e:
-                logger.error(f"[SWEEP] Failed to evolve candidate {key}: {e}")
-
-    await asyncio.gather(*(process_candidate(candidate) for candidate in candidates))
-    logger.info("[SWEEP] Completed hourly evolution sweep.")
+        await asyncio.gather(*(process_candidate(candidate) for candidate in candidates))
+        logger.info("[SWEEP] Completed hourly evolution sweep.")
+    except Exception as e:
+        logger.exception(f"[BACKGROUND FATAL] Unhandled exception during hourly sweep: {e}")
