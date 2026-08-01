@@ -165,6 +165,7 @@ class VectorMemory:
         try:
             logger.info("[VECTOR] Compiling binary memory payload...")
             with self.db_lock:
+                self._rebuild_bm25() # <-- REBUILD IT SAFELY HERE
                 faiss.write_index(self.index, "/tmp/faiss_index.bin")
                 with open("/tmp/vector_metadata.json", "w", encoding="utf-8") as f:
                     json.dump(self.metadata, f)
@@ -209,7 +210,6 @@ class VectorMemory:
                 "window_text": window_text
             })
             self.seen_hashes.add(msg_hash)
-            self._rebuild_bm25()
             
         self._schedule_sync()
 
@@ -221,7 +221,6 @@ class VectorMemory:
                 msg_hash = self._generate_hash(group_name, msg["username"], msg["content"], ts)
                 if msg_hash not in self.seen_hashes:
                     new_messages.append(msg)
-                    self.seen_hashes.add(msg_hash)
 
         if not new_messages:
             return 0
@@ -256,10 +255,16 @@ class VectorMemory:
         with self.db_lock:
             self.index.add(np.array(vectors))
             self.metadata.extend(batch_metadata_entries)
+            
+            # ADD IT HERE INSTEAD
+            for msg in new_messages:
+                ts = msg.get("timestamp", "")
+                msg_hash = self._generate_hash(group_name, msg["username"], msg["content"], ts)
+                self.seen_hashes.add(msg_hash)
+                
             # Only apply the historical buffer if the live buffer is currently empty
             if group_name not in self.rolling_buffers or not self.rolling_buffers[group_name]:
                 self.rolling_buffers[group_name] = batch_buffer[-2:]
-            self._rebuild_bm25()
                 
         if not skip_sync:
             self.force_sync()
