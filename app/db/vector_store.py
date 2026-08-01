@@ -84,26 +84,27 @@ class VectorMemory:
         logger.info("[VECTOR] Fetching FAISS index and metadata from Hugging Face...")
         
         index_loaded = False
-        if self.cloud_storage.download_file("vector_metadata.json", "/tmp/vector_metadata.json"):
+        
+        # 1. Properly download and load the FAISS binary
+        if self.cloud_storage.download_file("faiss_index.bin", "/tmp/faiss_index.bin"):
             try:
-                with open("/tmp/vector_metadata.json", "r", encoding="utf-8") as f:
-                    self.metadata = json.load(f)
-                for m in self.metadata:
-                    grp = m.get("group_name", "unknown")
-                    ts = m.get("timestamp", "")
-                    self.seen_hashes.add(self._generate_hash(grp, m["username"], m["content"], ts))
+                self.index = faiss.read_index("/tmp/faiss_index.bin")
+                index_loaded = True
             except Exception as e:
                 logger.error(f"[VECTOR] Failed to read FAISS index from disk: {e}")
                 
+        # 2. Properly download and load the JSON metadata
         if self.cloud_storage.download_file("vector_metadata.json", "/tmp/vector_metadata.json"):
             try:
                 with open("/tmp/vector_metadata.json", "r", encoding="utf-8") as f:
                     self.metadata = json.load(f)
                 for m in self.metadata:
-                    self.seen_hashes.add(self._generate_hash(m["username"], m["content"]))
-                    
-                    # FIXED: Rebuild the isolated buffers accurately on boot
+                    # Generate hashes
                     grp = m.get("group_name", "unknown")
+                    ts = m.get("timestamp", "")
+                    self.seen_hashes.add(self._generate_hash(grp, m["username"], m["content"], ts))
+                    
+                    # Rebuild sliding windows
                     if grp not in self.rolling_buffers:
                         self.rolling_buffers[grp] = []
                     self.rolling_buffers[grp].append({"username": m["username"], "content": m["content"]})

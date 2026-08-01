@@ -7,12 +7,24 @@ import spaces
 from app.api.routes import router
 from app.db.mongo import MongoDB
 
+# --- CONFIGURE GLOBAL LOGGING HERE ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+logger.info("LARPAn1 Neural Core Booting Sequence Initiated...")
+# --------------------------------------
+
 original_init = FastAPI.__init__
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
+    logger.info("Lifespan Context: Establishing MongoDB Connection...")
     MongoDB.connect()
     yield
+    logger.info("Lifespan Context: Tearing down connections...")
 
 def custom_init(self, *args, **kwargs):
     if "lifespan" not in kwargs:
