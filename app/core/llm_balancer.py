@@ -93,7 +93,8 @@ class ModularRoundRobinPool:
         with self.lock:
             active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
 
-        max_attempts = max_retries or max(active_pool_len * 2, 3)
+        # Cap max retry attempts per request to 5
+        max_attempts = max_retries or min(active_pool_len, 5)
         attempts = 0
 
         while attempts < max_attempts:
@@ -102,7 +103,6 @@ class ModularRoundRobinPool:
                 with dspy.context(lm=lm):
                     return dspy_program(*args, **kwargs)
             except Exception as e:
-                # Normalize string for robust matching
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
                 retry_triggers = [
@@ -115,12 +115,14 @@ class ModularRoundRobinPool:
                 if any(trigger in error_str for trigger in retry_triggers):
                     attempts += 1
                     logger.warning(f"[{self.pool_name}] Rate limit or transient error on active model! Advancing instance ({attempts}/{max_attempts}).")
-                    time.sleep(1.5 ** attempts) # <-- Add exponential backoff
+                    
+                    # Cap sleep duration to max 2.0s per retry attempt
+                    sleep_time = min(2.0, 0.5 * attempts)
+                    time.sleep(sleep_time)
                 else:
                     raise e
 
         raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
-
 
 # 1. COMBAT POOL (Roasting Engine)
 # Loaded directly into Primary queue -> Always uses NVIDIA models strictly.
