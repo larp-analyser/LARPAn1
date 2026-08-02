@@ -57,9 +57,12 @@ class ModularRoundRobinPool:
             for model_name in model_pool:
                 full_model_name = model_name if model_name.startswith(provider_prefix) else f"{provider_prefix}{model_name}"
                 try:
+                    # THE FIX: Force the underlying client to NEVER retry on its own
                     lm = dspy.LM(
                         model=full_model_name,
                         api_key=key,
+                        timeout=10.0,
+                        max_retries=0,      
                         **kwargs
                     )
                     target_queue.append(lm)
