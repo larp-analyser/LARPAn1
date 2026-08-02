@@ -9,7 +9,7 @@ import os
 import re
 from rank_bm25 import BM25Okapi
 
-from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub import HfFileSystem
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,41 +19,35 @@ def tokenize_text(text: str) -> list:
     return re.findall(r'\w+', text.lower())
 
 class HFPersistence:
-    """Handles background upload/download of serialized FAISS files to Hugging Face Datasets."""
+    """Handles background upload/download of serialized FAISS files to Hugging Face Storage Buckets."""
     def __init__(self):
-        self.api = HfApi()
         self.repo_id = settings.HF_DATASET_ID
         self.token = settings.HF_TOKEN
+        if self.token:
+            self.fs = HfFileSystem(token=self.token)
+        else:
+            self.fs = None
 
     def download_file(self, filename: str, dest_path: str) -> bool:
-        if not self.token or not self.repo_id:
+        if not self.fs or not self.repo_id:
             return False
         try:
-            downloaded_path = hf_hub_download(
-                repo_id=self.repo_id, 
-                filename=filename, 
-                repo_type="dataset", 
-                token=self.token
-            )
-            os.system(f"cp {downloaded_path} {dest_path}")
+            # Bucket paths use the "buckets/namespace/bucket_name" structure
+            remote_path = f"buckets/{self.repo_id}/{filename}"
+            self.fs.get(remote_path, dest_path)
             return True
         except Exception as e:
-            logger.info(f"[VECTOR] {filename} not found in HF Dataset or download failed: {e}")
+            logger.info(f"[VECTOR] {filename} not found in HF Bucket or download failed: {e}")
             return False
 
     def upload_file(self, filename: str, src_path: str):
-        if not self.token or not self.repo_id:
+        if not self.fs or not self.repo_id:
             return
         try:
-            self.api.upload_file(
-                path_or_fileobj=src_path,
-                path_in_repo=filename,
-                repo_id=self.repo_id,
-                repo_type="dataset",
-                token=self.token
-            )
+            remote_path = f"buckets/{self.repo_id}/{filename}"
+            self.fs.put(src_path, remote_path)
         except Exception as e:
-            logger.error(f"[VECTOR] HF Dataset upload failed for {filename}: {e}")
+            logger.error(f"[VECTOR] HF Bucket upload failed for {filename}: {e}")
 
 class VectorMemory:
     _instance = None
