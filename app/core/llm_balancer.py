@@ -4,6 +4,10 @@ import dspy
 import time
 from app.core.config import settings
 
+os.environ["OPENAI_MAX_RETRIES"] = "0"
+os.environ["LITELLM_NUM_RETRIES"] = "0"
+os.environ["LITELLM_MAX_RETRIES"] = "0"
+
 logger = logging.getLogger(__name__)
 
 class ModularRoundRobinPool:
@@ -61,7 +65,7 @@ class ModularRoundRobinPool:
                     lm = dspy.LM(
                         model=full_model_name,
                         api_key=key,
-                        timeout=10.0,
+                        timeout=5.0,
                         max_retries=0,      
                         **kwargs
                     )
