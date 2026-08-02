@@ -93,8 +93,8 @@ class ModularRoundRobinPool:
         with self.lock:
             active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
 
-        # Cap max retry attempts per request to 5
-        max_attempts = max_retries or min(active_pool_len, 5)
+        # Let it cycle through the ENTIRE pool before giving up
+        max_attempts = max_retries or active_pool_len
         attempts = 0
 
         while attempts < max_attempts:
@@ -116,9 +116,10 @@ class ModularRoundRobinPool:
                     attempts += 1
                     logger.warning(f"[{self.pool_name}] Rate limit or transient error on active model! Advancing instance ({attempts}/{max_attempts}).")
                     
-                    # Cap sleep duration to max 2.0s per retry attempt
-                    sleep_time = min(2.0, 0.5 * attempts)
-                    time.sleep(sleep_time)
+                    # NEW SLEEP LOGIC: Micro-sleep. 
+                    # Since we are swapping to a BRAND NEW key, we don't need to wait.
+                    # A flat 0.5 seconds prevents CPU thrashing but cycles 18 keys in just 9 seconds.
+                    time.sleep(0.5)
                 else:
                     raise e
 
