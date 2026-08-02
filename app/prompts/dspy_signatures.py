@@ -80,7 +80,7 @@ class TriageSignature(dspy.Signature):
     Determine if AN1 should engage with the human or remain in silence.
     - OUTPUT True ONLY if: 
         1. The user explicitly pinged AN1 WITH "@AN1" or with "<@1514883357442576485>" and NOT ANYONE ELSE. (is_direct_interaction='True').
-        2. OR they made a statement that CAN be FLIPPED ON THEM IN THE FORM OF A ROAST OR A RAGEBAIT, AND AN1 has NOT SAID ANYTHING in the IMMEDIATE chat history.
+        2. OR they made a statement that CAN be FLIPPED ON THEM IN THE FORM OF A ROAST OR A RAGEBAIT, AND AN1 has NOT YET SAID/REPLIED to ANYTHING in the IMMEDIATE chat history.
     - OUTPUT False if: 
         1. User(s) is(are) SPAMMING.
         2. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you.
