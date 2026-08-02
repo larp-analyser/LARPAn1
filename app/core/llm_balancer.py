@@ -2,6 +2,7 @@ import threading
 import logging
 import dspy
 import time
+import os
 from app.core.config import settings
 
 os.environ["OPENAI_MAX_RETRIES"] = "0"
