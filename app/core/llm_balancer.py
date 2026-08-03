@@ -109,9 +109,7 @@ class ModularRoundRobinPool:
         with self.lock:
             active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
 
-        # Cap retries to 3 for the combat pool. If it fails 3 times, NVIDIA is truly down.
-        default_max = min(active_pool_len, 3) if "COMBAT" in self.pool_name else active_pool_len
-        max_attempts = max_retries or default_max
+        max_attempts = max_retries or active_pool_len
         attempts = 0
 
         while attempts < max_attempts:
@@ -122,7 +120,6 @@ class ModularRoundRobinPool:
             except Exception as e:
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
-                # Includes the missing comma and the exact timeout strings
                 retry_triggers = [
                     "429", "error", "rate limit", "ratelimit", "quota", 
                     "request too large", "empty or null", "jsonadapter", 
@@ -135,9 +132,7 @@ class ModularRoundRobinPool:
                     attempts += 1
                     logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
                     
-                    # NEW SLEEP LOGIC: Micro-sleep. 
-                    # Since we are swapping to a BRAND NEW key, we don't need to wait.
-                    # A flat 0.5 seconds prevents CPU thrashing but cycles fast.
+                    # Micro-sleep to prevent thrashing
                     time.sleep(0.5)
                 else:
                     raise e
