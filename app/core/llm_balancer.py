@@ -2,7 +2,12 @@ import threading
 import logging
 import dspy
 import time
+import os
 from app.core.config import settings
+
+os.environ["OPENAI_MAX_RETRIES"] = "0"
+os.environ["LITELLM_NUM_RETRIES"] = "0"
+os.environ["LITELLM_MAX_RETRIES"] = "0"
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +58,22 @@ class ModularRoundRobinPool:
 
         target_queue = self.nvidia_lm_pool if is_nvidia else self.primary_lm_pool
 
+        # THE FIX: Check both the flag AND the base URL/prefix to ensure NVIDIA ALWAYS gets 600s
+        api_base = kwargs.get("api_base", "").lower()
+        if is_nvidia or "nvidia" in api_base or "nvidia" in provider_prefix.lower():
+            target_timeout = 600.0
+        else:
+            target_timeout = 5.0
+
         for key in api_keys:
             for model_name in model_pool:
                 full_model_name = model_name if model_name.startswith(provider_prefix) else f"{provider_prefix}{model_name}"
                 try:
-                    # THE FIX: Force the underlying client to NEVER retry on its own
+                    # Initialize with explicit kills for internal retries
                     lm = dspy.LM(
                         model=full_model_name,
                         api_key=key,
-                        timeout=10.0,
+                        timeout=target_timeout,  
                         max_retries=0,
                         num_retries=0,      
                         **kwargs
@@ -97,8 +109,9 @@ class ModularRoundRobinPool:
         with self.lock:
             active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
 
-        # Let it cycle through the ENTIRE pool before giving up
-        max_attempts = max_retries or active_pool_len
+        # Cap retries to 3 for the combat pool. If it fails 3 times, NVIDIA is truly down.
+        default_max = min(active_pool_len, 3) if "COMBAT" in self.pool_name else active_pool_len
+        max_attempts = max_retries or default_max
         attempts = 0
 
         while attempts < max_attempts:
@@ -109,21 +122,22 @@ class ModularRoundRobinPool:
             except Exception as e:
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
+                # Includes the missing comma and the exact timeout strings
                 retry_triggers = [
-                    "error", "429", "rate limit", "ratelimit", "quota", 
+                    "429", "error", "rate limit", "ratelimit", "quota", 
                     "request too large", "empty or null", "jsonadapter", 
                     "failed to parse", "none", "500", "502", "503",
                     "json validate failed", "invalid request error",
-                    "timeout", "timed out"
+                    "timeout", "timed out", "apitimeouterror" 
                 ]
                 
                 if any(trigger in error_str for trigger in retry_triggers):
                     attempts += 1
-                    logger.warning(f"[{self.pool_name}] Rate limit or transient error on active model! Advancing instance ({attempts}/{max_attempts}).")
+                    logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
                     
                     # NEW SLEEP LOGIC: Micro-sleep. 
                     # Since we are swapping to a BRAND NEW key, we don't need to wait.
-                    # A flat 0.5 seconds prevents CPU thrashing but cycles 18 keys in just 9 seconds.
+                    # A flat 0.5 seconds prevents CPU thrashing but cycles fast.
                     time.sleep(0.5)
                 else:
                     raise e
@@ -131,13 +145,13 @@ class ModularRoundRobinPool:
         raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
 
 # 1. COMBAT POOL (Roasting Engine)
-# Loaded directly into Primary queue -> Always uses NVIDIA models strictly.
+# Loaded directly into Primary queue -> Will receive 600s timeout due to URL parsing
 nvidia_combat_pool = ModularRoundRobinPool(pool_name="COMBAT_NVIDIA")
 nvidia_combat_pool.add_provider(
     api_keys=settings.nvidia_keys_list,
     model_pool=settings.NVIDIA_POOL,
     provider_prefix="openai/",
-    is_nvidia=False, # Loaded directly into primary queue for roasting
+    is_nvidia=False, 
     api_base="https://integrate.api.nvidia.com/v1",
     temperature=1.0,
     top_p=1.0,
@@ -148,7 +162,7 @@ nvidia_combat_pool.add_provider(
 # 2. TRIAGE POOL
 triage_pool = ModularRoundRobinPool(pool_name="TRIAGE_POOL")
 
-# Primary Queue (Google, Groq, OpenAI)
+# Primary Queue (Google, Groq, OpenAI) -> Receives 5s timeout
 triage_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
@@ -171,7 +185,7 @@ triage_pool.add_provider(
     max_tokens=2048
 )
 
-# Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
+# Dormant NVIDIA Queue -> Receives 600s timeout
 triage_pool.add_provider(
     api_keys=settings.nvidia_keys_list,
     model_pool=settings.NVIDIA_POOL,
@@ -186,7 +200,7 @@ triage_pool.add_provider(
 # 3. BACKGROUND POOL
 background_pool = ModularRoundRobinPool(pool_name="BACKGROUND_POOL")
 
-# Primary Queue (Google, Groq, OpenAI)
+# Primary Queue (Google, Groq, OpenAI) -> Receives 5s timeout
 background_pool.add_provider(
     api_keys=settings.google_keys_list,
     model_pool=settings.GOOGLE_POOL,
@@ -209,7 +223,7 @@ background_pool.add_provider(
     max_tokens=2048
 )
 
-# Dormant NVIDIA Queue (Activated strictly when programmer sets use_nvidia_fallback = True)
+# Dormant NVIDIA Queue -> Receives 600s timeout
 background_pool.add_provider(
     api_keys=settings.nvidia_keys_list,
     model_pool=settings.NVIDIA_POOL,
