@@ -61,7 +61,7 @@ class ModularRoundRobinPool:
                     lm = dspy.LM(
                         model=full_model_name,
                         api_key=key,
-                        timeout=4.0,
+                        timeout=10.0,
                         max_retries=0,
                         num_retries=0,      
                         **kwargs
