@@ -110,10 +110,11 @@ class ModularRoundRobinPool:
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
                 retry_triggers = [
-                    "429", "rate limit", "ratelimit", "quota", 
+                    "error", "429", "rate limit", "ratelimit", "quota", 
                     "request too large", "empty or null", "jsonadapter", 
                     "failed to parse", "none", "500", "502", "503",
-                    "json validate failed", "invalid request error"
+                    "json validate failed", "invalid request error",
+                    "timeout", "timed out"
                 ]
                 
                 if any(trigger in error_str for trigger in retry_triggers):
