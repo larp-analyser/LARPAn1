@@ -329,7 +329,6 @@ async def evolve_profile_task(user_key: str, group_name: str, global_key: str, m
     try:
         chat_repo = ChatRepository()
         
-        # 1. LIVE VECTOR INGESTION: Embed the recent messages into the active vector pool
         try:
             vector_group = user_key if group_name == "private_chat" else group_name
             

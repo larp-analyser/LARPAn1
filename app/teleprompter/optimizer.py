@@ -56,52 +56,17 @@ def run_teleprompter_task():
                 
             reply_text = str(pred.reply)
             
-            # Constraint 1: Verbosity
             if len(reply_text) > 80:
                 return 0.0
                 
-            # Constraint 2: Persona & Structural Filter
-            internet_acronyms = r"(lmao|lmfao|lol|rofl|tbh|ngl|fr|afaik|iirc|imho|imo|smh|ong|deadass|idk|rn|bc|cuz|pls|plz|tf|wtf|stfu|ik|iykyk|ur|u|mf|stg|omg|omfg|nvm|jsyk|icymi|irl|tldr|imma|gonna|wanna|gotta|finna)"
-            brainrot_and_trends = r"(rizz|sigma|skibidi|gyatt|cap|based|mid|aura|yap|yapping|ratio|sus|delulu|pookie|cooked|mewing|looksmaxxing|bussin|sheesh|yeet|lit|bet|glaze|glazing|npc|simp|cuck|chad|incel|slay|periodt)"
-            corporate_and_therapy = r"(bandwidth|unpack|gaslight|gaslighting|problematic|synergy|mindset|journey|navigate|align|toxic|narcissist|narcissistic|trigger|triggered|trauma|boundaries|validate|validation|projecting|projection|leverage|pivot|holistic|paradigm|ideate|empower)"
-            vocal_pauses = r"(uh|um|er|hmm|huh|oof|yikes|pfft|psh|ugh|welp|meh|haha|hehe|xd|kek|aww|oop|tsk|geez|jeez|dang|heck|yay|whoops)"
-            weak_vocatives = r"(bro|bruh|broski|dawg|blud|homie|fam|bruv|buddy|chief|boss|kiddo|bucko|pal|chum|champ|sport|amigo|fella|fellas|peeps|yall)"
-            adverbial_crutches = r"(literally|basically|essentially|actually|honestly|frankly|seriously|obviously|genuinely|totally|absolutely|utterly|practically|technically|ironically)"
-            hedge_words = r"(kinda|sorta|maybe|perhaps|somewhat|probably|apparently|seemingly|supposedly|theoretically|hypothetically)"
-            observed_filler = r"(says|vibe|relevant|words|sentences)"
-            
-            filler_pattern = re.compile(
-                rf"\b({internet_acronyms}|{brainrot_and_trends}|{corporate_and_therapy}|{vocal_pauses}|{weak_vocatives}|{adverbial_crutches}|{hedge_words}|{observed_filler})\b", 
-                re.IGNORECASE
-            )
-            if filler_pattern.search(reply_text):
-                return 0.0
-                
-            # Constraint 3: Formatting Tropes
             if re.search(r'[\n\r=—–~#*>]|--|\.\.\.|…', reply_text):
                 return 0.0
                 
-            # Constraint 4: Cinematic Narrator
             if re.search(r':|\b(mode|activated|cue|reflex|breath|panic|flag|status|online|offline|address|network|system)\b|[.!?]\s+[A-Z]', reply_text, re.IGNORECASE):
                 return 0.0
                 
-            # Constraint 5: Cliches and Rhetorical Questions
-            if re.search(r'\?|\"|\b(imagine|ah yes|oh look|it[\'’]?s funny how|the fact that|speaks volumes|try harder|do better|next|make it make sense|let that sink in)\b', reply_text, re.IGNORECASE):
-                return 0.0
-                
-                
-            # Constraint 8: Pretentious Academics
-            if re.search(r'\b(demonstrates|indicates|illustrates|profound|inadequate|deficit|exhibits|displays|fascinating|intriguing|indicative|perpetuate|manifests)\b', reply_text, re.IGNORECASE):
-                return 0.0
-                
-            # Constraint 9: Echoing
             if re.search(r'^(so,?|oh,? so|let me get this straight|you think|you really think|are you saying)\b', reply_text.strip(), re.IGNORECASE):
                 return 0.0
-                
-            # Constraint 10: Unsolicited Advice
-            if re.search(r'\b(maybe you should|try to|it[\'’]?s time to|grow up|do yourself a favor|re-evaluate|reconsider|take a break|seek help)\b', reply_text, re.IGNORECASE):
-                return 0.0
-                
                 
             res = auditor(active_message=example.message, proposed_reply=reply_text)
             if res.audit.is_self_roast:
