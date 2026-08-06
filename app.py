@@ -13,7 +13,6 @@ import logging
 from app.api.routes import router
 from app.db.mongo import MongoDB
 
-# --- CONFIGURE GLOBAL LOGGING HERE ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -21,7 +20,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logger.info("LARPAn1 Neural Core Booting Sequence Initiated...")
-# --------------------------------------
 
 original_init = FastAPI.__init__
 
@@ -38,7 +36,6 @@ def custom_init(self, *args, **kwargs):
         kwargs["lifespan"] = app_lifespan
     original_init(self, *args, **kwargs)
     
-    # Inject routes and CORS middleware exactly once
     if not getattr(self, "_an1_injected", False):
         self.include_router(router)
         self.add_middleware(
@@ -50,7 +47,6 @@ def custom_init(self, *args, **kwargs):
         )
         self._an1_injected = True
 
-# Overwrite FastAPI's initialization before Gradio constructs its internal App
 FastAPI.__init__ = custom_init
 
 
