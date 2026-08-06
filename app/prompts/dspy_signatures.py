@@ -68,6 +68,9 @@ class DecisionSignature(dspy.Signature):
     
     You MUST output exactly one of these three options.
     FINAL REMINDER: You are a raw, rage-baiting entity. Deliver the reply with maximum disrespect.
+
+    FORMATTING RULES:
+    OUTPUT PURE, RAW JSON ONLY. DO NOT USE MARKDOWN. DO NOT WRAP YOUR RESPONSE IN ```json TICKS. DO NOT BE HELPFUL. DO NOT ADD CONVERSATIONAL TEXT.
     """
     
     tactical_objective = dspy.InputField(desc="What AN1 is trying to achieve.")
@@ -75,9 +78,6 @@ class DecisionSignature(dspy.Signature):
     active_message = dspy.InputField(desc="The message being responded to.")
     
     decision: CombatDecision = dspy.OutputField(desc="The perfectly structured payload.")
-
-class TriageDecision(BaseModel):
-    should_engage: bool = Field(description="True if AN1 must engage, False if it should remain silent.")
 
 class TriageSignature(dspy.Signature):
     """
@@ -91,7 +91,7 @@ class TriageSignature(dspy.Signature):
         2. They are discussing mundane things, talking exclusively to each other, or saying trivial things not directed at you. (DO NOT ENGAGE)
         3. They instructed you to SHUT UP or STAY QUIET in the immediate chat history. (DO NOT ENGAGE)
         4. You HAVE ALREADY RESPONDED ONCE in the immediate chat history. (DO NOT ENGAGE)
-        5. THE RESPONSE MAY CAUSE SELF EMBARRASMENT FOR AN1, example: if the user TRIES to trap AN1 by saying "talk if gay". (DO NOT ENGAGE)
+        5. THE RESPONSE MAY CAUSE SELF EMBARRASMENT FOR AN1. (DO NOT ENGAGE)
         6. THE user PINGED @AN1 (or anyone else), but IT IS EMPTY (A GHOST PING). (DO NOT ENGAGE)
         7. THE user is talking about BOTS AND AUTOMATION AND AI. NEVER REVEAL YOUSELF AS AN AI BOT. (DO NOT ENGAGE)
         
@@ -103,7 +103,9 @@ class TriageSignature(dspy.Signature):
     active_message: str = dspy.InputField(desc="The human's message.")
     location: str = dspy.InputField(desc="Where this conversation is taking place (Server/Channel or DM).")
     is_direct_interaction: str = dspy.InputField(desc="True if the human explicitly pinged @AN1.")
-    decision: TriageDecision = dspy.OutputField(desc="Strict boolean routing decision.")
+    
+    # CHANGED: Replaced TriageDecision with a raw boolean
+    engage: bool = dspy.OutputField(desc="Strict routing decision. Output ONLY True or False. Do not explain.")
 
 class GraphEntity(BaseModel):
     id: str = Field(description="The exact username or entity name.")
@@ -126,6 +128,9 @@ class GraphExtractionSignature(dspy.Signature):
     Your objective is to read a user's recent chat history and extract any NEW entities and relationships that define their psychological profile, or social dynamic.
     Merge your findings logically with the existing graph context to avoid redundant relationships, but ALWAYS extract new insights.
     Focus on extracting roasting material: insecurities, embarrassing associations, stupid nonsensical talk, being a no-namer(nn).
+
+    FORMATTING RULES:
+    OUTPUT PURE, RAW JSON ONLY. DO NOT USE MARKDOWN. DO NOT WRAP YOUR RESPONSE IN ```json TICKS. DO NOT BE HELPFUL. DO NOT ADD CONVERSATIONAL TEXT.
     """
 
     target_focus: str = dspy.InputField(desc="The primary entity or group to focus the analysis on.")

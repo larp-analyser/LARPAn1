@@ -210,7 +210,8 @@ def triage_node(state: CombatState):
             location=state["location"],
             is_direct_interaction=str(state["is_direct"])
         )
-        engage = res.decision.should_engage if (res and hasattr(res, "decision") and res.decision) else False
+        # CHANGED: Reading the raw boolean directly from res.engage
+        engage = res.engage if (res and hasattr(res, "engage")) else False
         logger.info(f"Triage processed | Engage: {engage}")
         return {"should_engage": engage}
     except Exception as e:

@@ -74,7 +74,7 @@ class ModularRoundRobinPool:
                         model=full_model_name,
                         api_key=key,
                         timeout=target_timeout,  
-                        max_retries=0,
+                        max_retries=3,
                         num_retries=0,      
                         **kwargs
                     )
@@ -111,6 +111,7 @@ class ModularRoundRobinPool:
 
         max_attempts = max_retries or active_pool_len
         attempts = 0
+        json_failures = 0  # NEW: Track JSON format errors separately
 
         while attempts < max_attempts:
             try:
@@ -120,20 +121,34 @@ class ModularRoundRobinPool:
             except Exception as e:
                 error_str = str(e).lower().replace("_", " ").replace("-", " ")
                 
-                retry_triggers = [
-                    "429", "error", "rate limit", "ratelimit", "quota", 
-                    "request too large", "empty or null", "jsonadapter", 
-                    "failed to parse", "none", "500", "502", "503",
-                    "json validate failed", "invalid request error",
+                # Triggers that indicate network/quota issues (Allowed to cycle fully)
+                network_triggers = [
+                    "429", "rate limit", "ratelimit", "quota", 
+                    "500", "502", "503",
                     "timeout", "timed out", "apitimeouterror" 
                 ]
                 
-                if any(trigger in error_str for trigger in retry_triggers):
+                # Triggers that indicate bad JSON formatting (Capped at 3)
+                format_triggers = [
+                    "jsonadapter", "failed to parse", "json validate failed", 
+                    "invalid request error", "empty or null"
+                ]
+                
+                if any(trigger in error_str for trigger in network_triggers):
                     attempts += 1
-                    logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
-                    
-                    # Micro-sleep to prevent thrashing
+                    logger.warning(f"[{self.pool_name}] Rate limit/timeout! Advancing instance ({attempts}/{max_attempts}).")
                     time.sleep(0.5)
+                    
+                elif any(trigger in error_str for trigger in format_triggers):
+                    json_failures += 1
+                    if json_failures >= 5:
+                        logger.error(f"[{self.pool_name}] Model repeatedly failed JSON parsing {json_failures} times. Aborting to prevent spiral.")
+                        raise e  # Fail fast!
+                        
+                    attempts += 1
+                    logger.warning(f"[{self.pool_name}] Bad JSON formatting! Advancing instance ({json_failures}/5).")
+                    time.sleep(0.5)
+                    
                 else:
                     raise e
 
