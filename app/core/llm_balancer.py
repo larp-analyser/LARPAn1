@@ -63,7 +63,7 @@ class ModularRoundRobinPool:
         if is_nvidia or "nvidia" in api_base or "nvidia" in provider_prefix.lower():
             target_timeout = 600.0
         else:
-            target_timeout = 5.0
+            target_timeout = 15.0
 
         for key in api_keys:
             for model_name in model_pool:
@@ -111,7 +111,7 @@ class ModularRoundRobinPool:
 
         max_attempts = max_retries or active_pool_len
         attempts = 0
-        json_failures = 0  # NEW: Track JSON format errors separately
+        json_failures = 0
 
         while attempts < max_attempts:
             try:
@@ -119,27 +119,35 @@ class ModularRoundRobinPool:
                 with dspy.context(lm=lm):
                     return dspy_program(*args, **kwargs)
             except Exception as e:
-                error_str = str(e).lower().replace("_", " ").replace("-", " ")
+                # Capture both the exception string and its exact class type
+                error_str = repr(e).lower() + " " + str(e).lower()
                 
-                # Triggers that indicate network/quota issues (Allowed to cycle fully)
+                # STRICT Network Triggers - No generic words allowed
                 network_triggers = [
-                    "429", "rate limit", "ratelimit", "quota", 
-                    "500", "502", "503",
-                    "timeout", "timed out", "apitimeouterror" 
+                    "ratelimiterror", "status_code: 429", "status_code: 500", 
+                    "status_code: 502", "status_code: 503", "apitimeouterror", 
+                    "read timeout", "rate_limit_exceeded", "litellm.exceptions.timeout"
                 ]
                 
-                # Triggers that indicate bad JSON formatting (Capped at 3)
+                # STRICT Formatting Triggers
                 format_triggers = [
-                    "jsonadapter", "failed to parse", "json validate failed", 
-                    "invalid request error", "empty or null"
+                    "json validate failed", "failed to parse", "jsonadapter", 
+                    "invalid format", "pydantic", "output validation failed"
                 ]
                 
-                if any(trigger in error_str for trigger in network_triggers):
+                is_network = any(trigger in error_str for trigger in network_triggers)
+                is_format = any(trigger in error_str for trigger in format_triggers)
+                
+                # Fallback for DSPy's raw ValueErrors during JSON extraction
+                if isinstance(e, ValueError) and "parse" in error_str:
+                    is_format = True
+
+                if is_network:
                     attempts += 1
-                    logger.warning(f"[{self.pool_name}] Rate limit/timeout! Advancing instance ({attempts}/{max_attempts}).")
+                    logger.warning(f"[{self.pool_name}] Rate limit/Network timeout! Advancing instance ({attempts}/{max_attempts}).")
                     time.sleep(0.5)
                     
-                elif any(trigger in error_str for trigger in format_triggers):
+                elif is_format:
                     json_failures += 1
                     if json_failures >= 5:
                         logger.error(f"[{self.pool_name}] Model repeatedly failed JSON parsing {json_failures} times. Aborting to prevent spiral.")
@@ -150,6 +158,8 @@ class ModularRoundRobinPool:
                     time.sleep(0.5)
                     
                 else:
+                    # Permanent errors (Auth, Bad Model Name, etc.) WILL NOW PROPERLY CRASH
+                    logger.error(f"[{self.pool_name}] UNRECOVERABLE ERROR: {e.__class__.__name__} - {str(e)}")
                     raise e
 
         raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
