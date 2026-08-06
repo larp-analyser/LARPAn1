@@ -45,10 +45,7 @@ class ModularRoundRobinPool:
             logger.info(f"[{self.pool_name}] Reset to default state (use_nvidia_fallback = False).")
 
     def add_provider(self, api_keys: list, model_pool: list, provider_prefix: str, is_nvidia: bool = False, **kwargs):
-        """
-        Registers provider models into either the Primary or NVIDIA pool queue.
-        Iterates through all models for Key 1 before moving to Key 2.
-        """
+        """Registers provider models into either the Primary or NVIDIA pool queue."""
         api_keys = [k.strip() for k in (api_keys or []) if k and k.strip()]
         model_pool = [m.strip() for m in (model_pool or []) if m and m.strip()]
 
@@ -58,18 +55,17 @@ class ModularRoundRobinPool:
 
         target_queue = self.nvidia_lm_pool if is_nvidia else self.primary_lm_pool
 
-        # THE FIX: Check both the flag AND the base URL/prefix to ensure NVIDIA ALWAYS gets 600s
         api_base = kwargs.get("api_base", "").lower()
         if is_nvidia or "nvidia" in api_base or "nvidia" in provider_prefix.lower():
             target_timeout = 600.0
         else:
+            # THE FIX: Increased to 15.0 to give the LLM time to write the output!
             target_timeout = 15.0
 
         for key in api_keys:
             for model_name in model_pool:
                 full_model_name = model_name if model_name.startswith(provider_prefix) else f"{provider_prefix}{model_name}"
                 try:
-                    # Initialize with explicit kills for internal retries
                     lm = dspy.LM(
                         model=full_model_name,
                         api_key=key,
@@ -81,6 +77,69 @@ class ModularRoundRobinPool:
                     target_queue.append(lm)
                 except Exception as e:
                     logger.error(f"[{self.pool_name}] Failed to initialize {full_model_name}: {e}")
+
+    def execute_with_retry(self, dspy_program, *args, max_retries=None, **kwargs):
+        with self.lock:
+            active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
+
+        max_attempts = max_retries or active_pool_len
+        attempts = 0
+        json_failures = 0
+
+        while attempts < max_attempts:
+            try:
+                lm = self.get_next()
+                with dspy.context(lm=lm):
+                    return dspy_program(*args, **kwargs)
+            except Exception as e:
+                e_name = type(e).__name__.lower()
+                error_str = str(e).lower()
+                
+                # 1. EXHAUSTIVE NETWORK CATCHER
+                # Checks class names for any variant of Timeout, RateLimit, Connection, or Availability errors
+                # Checks strings for exact HTTP quota/server drop codes
+                is_network = any(t in e_name for t in [
+                    "timeout", "ratelimit", "connection", "serviceunavailable", "disconnect"
+                ]) or any(t in error_str for t in [
+                    "429", "502", "503", "504", "rate limit", "too many requests"
+                ])
+                
+                # 2. EXHAUSTIVE FORMATTING CATCHER
+                # Checks class names for any Pydantic/JSON parsing crashes
+                # Checks strings for DSPy's specific schema rejection phrasing
+                is_format = any(t in e_name for t in [
+                    "validationerror", "jsondecodeerror", "outputparser"
+                ]) or any(t in error_str for t in [
+                    "json", "parse", "validation", "pydantic", "invalid format", "schema"
+                ])
+
+                # 3. CONFLICT RESOLUTION (The Silver Bullet)
+                # If an API wraps a bad JSON format rejection inside a generic Network APIError,
+                # we force it to be treated as a Formatting error so it caps at 5 attempts!
+                if is_format:
+                    is_network = False
+
+                if is_network:
+                    attempts += 1
+                    logger.warning(f"[{self.pool_name}] Network/Quota Exception ({e_name})! Advancing instance ({attempts}/{max_attempts}).")
+                    time.sleep(0.5)
+                    
+                elif is_format:
+                    json_failures += 1
+                    if json_failures >= 5:
+                        logger.error(f"[{self.pool_name}] Model repeatedly hallucinated bad formatting {json_failures} times. Aborting.")
+                        raise e  # Fail fast!
+                        
+                    attempts += 1
+                    logger.warning(f"[{self.pool_name}] Bad JSON formatting detected! Advancing instance ({json_failures}/5).")
+                    time.sleep(0.5)
+                    
+                else:
+                    # TRUE FATAL ERRORS (Authentication, Invalid API Keys, Bad Model Strings)
+                    logger.error(f"[{self.pool_name}] UNRECOVERABLE ERROR: {e_name} - {str(e)}")
+                    raise e
+
+        raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
 
     def get_next(self):
         """
@@ -105,64 +164,6 @@ class ModularRoundRobinPool:
             self.primary_index = (self.primary_index + 1) % len(self.primary_lm_pool)
             return current_lm
 
-    def execute_with_retry(self, dspy_program, *args, max_retries=None, **kwargs):
-        with self.lock:
-            active_pool_len = len(self.nvidia_lm_pool) if self.use_nvidia_fallback else len(self.primary_lm_pool)
-
-        max_attempts = max_retries or active_pool_len
-        attempts = 0
-        json_failures = 0
-
-        while attempts < max_attempts:
-            try:
-                lm = self.get_next()
-                with dspy.context(lm=lm):
-                    return dspy_program(*args, **kwargs)
-            except Exception as e:
-                # Capture both the exception string and its exact class type
-                error_str = repr(e).lower() + " " + str(e).lower()
-                
-                # STRICT Network Triggers - No generic words allowed
-                network_triggers = [
-                    "ratelimiterror", "status_code: 429", "status_code: 500", 
-                    "status_code: 502", "status_code: 503", "apitimeouterror", 
-                    "read timeout", "rate_limit_exceeded", "litellm.exceptions.timeout"
-                ]
-                
-                # STRICT Formatting Triggers
-                format_triggers = [
-                    "json validate failed", "failed to parse", "jsonadapter", 
-                    "invalid format", "pydantic", "output validation failed"
-                ]
-                
-                is_network = any(trigger in error_str for trigger in network_triggers)
-                is_format = any(trigger in error_str for trigger in format_triggers)
-                
-                # Fallback for DSPy's raw ValueErrors during JSON extraction
-                if isinstance(e, ValueError) and "parse" in error_str:
-                    is_format = True
-
-                if is_network:
-                    attempts += 1
-                    logger.warning(f"[{self.pool_name}] Rate limit/Network timeout! Advancing instance ({attempts}/{max_attempts}).")
-                    time.sleep(0.5)
-                    
-                elif is_format:
-                    json_failures += 1
-                    if json_failures >= 5:
-                        logger.error(f"[{self.pool_name}] Model repeatedly failed JSON parsing {json_failures} times. Aborting to prevent spiral.")
-                        raise e  # Fail fast!
-                        
-                    attempts += 1
-                    logger.warning(f"[{self.pool_name}] Bad JSON formatting! Advancing instance ({json_failures}/5).")
-                    time.sleep(0.5)
-                    
-                else:
-                    # Permanent errors (Auth, Bad Model Name, etc.) WILL NOW PROPERLY CRASH
-                    logger.error(f"[{self.pool_name}] UNRECOVERABLE ERROR: {e.__class__.__name__} - {str(e)}")
-                    raise e
-
-        raise RuntimeError(f"[{self.pool_name}] Exceeded max retries ({max_attempts}) across active pool.")
 
 # 1. COMBAT POOL (Roasting Engine)
 # Loaded directly into Primary queue -> Will receive 600s timeout due to URL parsing
