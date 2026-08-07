@@ -25,10 +25,10 @@ original_init = FastAPI.__init__
 
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
-    logger.info("Lifespan Context: Establishing MongoDB Connection...")
+    logger.info("DB link Established!")
     MongoDB.connect()
     yield
-    logger.info("Lifespan Context: Tearing down connections...")
+    logger.info("Tearing down DB link.")
     MongoDB.disconnect()
 
 def custom_init(self, *args, **kwargs):
