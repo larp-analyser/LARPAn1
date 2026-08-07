@@ -382,15 +382,17 @@ class VRAGEngine(BaseEngine):
         except Exception as e:
             logger.error(f"[VRAG] Semantic vector retrieval failed: {e}")
 
+        location_str = "DM" if is_private else f"Server Channel: #{payload.channel or 'unknown'}"
+
         initial_state = {
             "history": triage_history_str,
             "combat_history": combat_history_str,
             "graph": graph_str,
             "user": payload.username,
             "message": payload.message,
-            "location": payload.channel,
-            "is_direct": payload.force_reply or ("@an1" in payload.message.lower()),
-            "force_engage": is_private or payload.force_reply,
+            "location": location_str,
+            "is_direct": payload.force_reply or is_private or ("@an1" in payload.message.lower()),
+            "force_engage": payload.force_reply,
             "should_engage": False,
             "reply": "",
             "reaction": None,
