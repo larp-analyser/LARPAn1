@@ -63,7 +63,7 @@ class ModularRoundRobinPool:
         if is_nvidia or "nvidia" in api_base or "nvidia" in provider_prefix.lower():
             target_timeout = 600.0
         else:
-            target_timeout = 5.0
+            target_timeout = 10.0
 
         for key in api_keys:
             for model_name in model_pool:
@@ -133,7 +133,7 @@ class ModularRoundRobinPool:
                     logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
                     
                     # Micro-sleep to prevent thrashing
-                    time.sleep(0.5)
+                    time.sleep(1)
                 else:
                     raise e
 
