@@ -8,6 +8,7 @@ from app.core.config import settings
 os.environ["OPENAI_MAX_RETRIES"] = "0"
 os.environ["LITELLM_NUM_RETRIES"] = "0"
 os.environ["LITELLM_MAX_RETRIES"] = "0"
+os.environ["LITELLM_LOG"] = "ERROR"
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +132,6 @@ class ModularRoundRobinPool:
                 if any(trigger in error_str for trigger in retry_triggers):
                     attempts += 1
                     logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
-                    
-                    # Micro-sleep to prevent thrashing
-                    time.sleep(1)
                 else:
                     raise e
 

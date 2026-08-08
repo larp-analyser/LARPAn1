@@ -1,8 +1,3 @@
-import os
-os.environ["OPENAI_MAX_RETRIES"] = "0"
-os.environ["LITELLM_NUM_RETRIES"] = "0"
-os.environ["LITELLM_MAX_RETRIES"] = "0"
-
 from contextlib import asynccontextmanager
 import gradio as gr
 from fastapi import FastAPI
