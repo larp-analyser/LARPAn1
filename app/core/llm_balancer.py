@@ -133,7 +133,7 @@ class ModularRoundRobinPool:
                     logger.warning(f"[{self.pool_name}] Rate limit/timeout on active model! Advancing instance ({attempts}/{max_attempts}).")
                     
                     # Micro-sleep to prevent thrashing
-                    time.sleep(0.1)
+                    time.sleep(1)
                 else:
                     raise e
 
