@@ -62,7 +62,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
                 edge_last_seen = rel.get("last_seen") or data.get("last_updated") or now.isoformat()
                 try:
                     edge_age_days = (now - datetime.fromisoformat(edge_last_seen)).days
-                except:
+                except Exception:
                     edge_age_days = 0
                     
                 edge_decay_factor = max(0.1, 0.9 ** edge_age_days)
@@ -90,12 +90,23 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
         return f"--- TARGET DOSSIER: {username} ---\nNo known network connections. Target is socially isolated."
 
     try:
-        social_scores = nx.pagerank(G, weight='weight')
-        target_score = social_scores.get(username, 0.0)
+        # Convert to undirected graph so social rank flows bilaterally
+        # (Prevents active chatters from draining their rank into targets they talk about)
+        undirected_G = G.to_undirected()
+        
+        # Increase max_iter to survive irregular topologies and prevent convergence failures
+        social_scores = nx.pagerank(undirected_G, weight='weight', max_iter=1000)
+        raw_score = social_scores.get(username, 0.0)
+        
+        # Scale raw probability mass (which sums to 1.0) by total node count N
+        # 1.0 = Average entity importance, > 1.0 = Above average, < 1.0 = Below average
+        target_score = raw_score * len(undirected_G)
+        
         ranked_users = sorted(social_scores.items(), key=lambda x: x[1], reverse=True)
         rank_index = next((i for i, v in enumerate(ranked_users) if v[0] == username), len(ranked_users))
         social_status = f"Rank {rank_index + 1} out of {len(ranked_users)} active entities."
     except Exception as e:
+        print(f"[GRAPH ERROR] PageRank calculation failed: {type(e).__name__} - {e}")
         target_score, social_status = 0.0, "Unknown"
 
     try:
@@ -103,7 +114,7 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
         factions = list(nx_comm.greedy_modularity_communities(undirected_G))
         user_faction = next((list(f) for f in factions if username in f), [])
         faction_str = ", ".join([u for u in user_faction if u != username]) if len(user_faction) > 1 else "Lone Wolf"
-    except:
+    except Exception:
         faction_str = "Unknown"
         
     context_lines = []
@@ -115,7 +126,6 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
     context_lines.append(f"DETECTED FACTION / ALLIES: {faction_str}")
     
     # Extract 2-Hop Subgraph using NetworkX ego_graph
-    # radius=2 extracts the user + direct neighbors + neighbors of neighbors
     if username in G:
         ego_G = nx.ego_graph(G, username, radius=2, center=True)
         edges = [(u, v, d) for u, v, d in ego_G.edges(data=True)]
@@ -124,15 +134,11 @@ def build_networkx_context(username: str, user_graph: dict, group_graph: dict = 
     
     if edges:
         context_lines.append("\nEXPANDED NETWORK RELATIONSHIPS (2-Hop Depth, Decay-Weighted):")
-        # Sort edges by time-decayed weight
         edges.sort(key=lambda x: x[2].get('weight', 0), reverse=True)
         
-        # INCREASED CAP: Top 25 most relevant relationships (up from 10)
         for source, target, data in edges[:25]:
             w = data.get('weight', 0)
             status = "[FADING]" if w < 2.0 else "[ACTIVE]"
-            
-            # Tag whether it is a direct (1-hop) or indirect (2-hop) connection
             hop_tag = "[DIRECT]" if (source == username or target == username) else "[INDIRECT]"
             
             context_lines.append(
