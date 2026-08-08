@@ -115,9 +115,9 @@ class AN1CombatEngine(dspy.Module):
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
                 
-            elif re.search(r':|\b(mode|activated|cue|reflex|confirmed|zero|breath|panic|flag|status|online|offline|address|network|system)\b|[.!?]\s+[A-Z]', reply_text, re.IGNORECASE):
+            elif re.search(r':|\b(mode|activated|cue|reflex|confirmed|zero|uplink|downlink|link|breath|panic|flag|status|online|offline|address|network|system)\b|[.,!?]\s+[A-Z]', reply_text, re.IGNORECASE):
                 penalty = (
-                    "CRITICAL PENALTY: Your response was rejected for sounding like a cinematic narrator or anime villain. "
+                    "CRITICAL PENALTY: Your response was rejected for sounding over-dramatised. "
                     "Do not use two-part fragmented sentences (e.g., 'Same line. You are...'). "
                     "Do not narrate the user's status (e.g., 'Panic mode: activated.'). "
                     "You MUST write exactly ONE single, fluid, natural sentence. No mid-thought periods."
@@ -127,11 +127,11 @@ class AN1CombatEngine(dspy.Module):
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
 
-            elif re.search(r'^(so,?|oh,? so|let me get this straight|you think|you really think|are you saying)\b', reply_text.strip(), re.IGNORECASE):
+            elif re.search(r'^(so,?|oh,? so|let me get this straight|you think|wow|you really think|are you saying)\b', reply_text.strip(), re.IGNORECASE):
                 penalty = (
                     "CRITICAL PENALTY: Your response was rejected for echoing or acknowledging the user's premise. "
-                    "Do not start sentences with 'So...', 'Oh, so...', or 'You think...'. "
-                    "Never repeat what they just said. Attack the underlying insecurity immediately."
+                    "Do not start sentences with 'So...', 'Oh, so...', or 'You think...', or 'Wow...' "
+                    "Never repeat what they just said. Reply directly."
                 )
                 logger.warning("Echo / Acknowledgment violation detected. Penalty applied.")
                 safety_trace += "| Echo Trope Penalty "
