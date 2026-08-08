@@ -306,7 +306,7 @@ class VRAGEngine(BaseEngine):
             history = await asyncio.to_thread(
                 self.group_repo.get_recent_history if payload.group_name != "private_chat" else self.chat_repo.get_recent_history,
                 payload.group_name if payload.group_name != "private_chat" else user_key,
-                limit=10
+                limit=50
             )
             return "\n".join([f"[{m.get('username', 'Unknown')}]: {m.get('content', '')}" for m in history])
 
