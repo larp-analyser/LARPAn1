@@ -96,8 +96,8 @@ class AN1CombatEngine(dspy.Module):
             reply_text = dec_res.decision.reply
             needs_retry = False
             
-            if len(reply_text) > 70:
-                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 50 characters. Cut the fat."
+            if len(reply_text) > 55:
+                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 55 characters. Cut the fat."
                 logger.warning(f"Verbosity detected ({len(reply_text)} chars). Penalty applied.")
                 safety_trace += "| Verbosity Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
