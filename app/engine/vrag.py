@@ -96,8 +96,8 @@ class AN1CombatEngine(dspy.Module):
             reply_text = dec_res.decision.reply
             needs_retry = False
             
-            if len(reply_text) > 80:
-                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 80 characters. Cut the fat."
+            if len(reply_text) > 70:
+                penalty = f"CRITICAL PENALTY: Your reply is {len(reply_text)} characters. It MUST be under 50 characters. Cut the fat."
                 logger.warning(f"Verbosity detected ({len(reply_text)} chars). Penalty applied.")
                 safety_trace += "| Verbosity Penalty "
                 current_constraints = f"{current_constraints}\n{penalty}"
@@ -115,7 +115,7 @@ class AN1CombatEngine(dspy.Module):
                 current_constraints = f"{current_constraints}\n{penalty}"
                 needs_retry = True
                 
-            elif re.search(r':|\b(mode|activated|cue|reflex|breath|panic|flag|status|online|offline|address|network|system)\b|[.!?]\s+[A-Z]', reply_text, re.IGNORECASE):
+            elif re.search(r':|\b(mode|activated|cue|reflex|confirmed|zero|breath|panic|flag|status|online|offline|address|network|system)\b|[.!?]\s+[A-Z]', reply_text, re.IGNORECASE):
                 penalty = (
                     "CRITICAL PENALTY: Your response was rejected for sounding like a cinematic narrator or anime villain. "
                     "Do not use two-part fragmented sentences (e.g., 'Same line. You are...'). "
