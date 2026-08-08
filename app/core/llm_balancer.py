@@ -74,7 +74,7 @@ class ModularRoundRobinPool:
                         model=full_model_name,
                         api_key=key,
                         timeout=target_timeout,  
-                        max_retries=3,
+                        max_retries=0,
                         num_retries=0,      
                         **kwargs
                     )
